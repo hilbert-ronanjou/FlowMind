@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, CheckSquare2, LayoutDashboard, LogOut, Menu, Settings, X } from "lucide-react";
+import { BookOpen, CheckSquare2, LayoutDashboard, LogOut, Menu, Settings, Sparkles, X } from "lucide-react";
 import { useState } from "react";
 
 import { useAuth } from "@/components/auth-provider";
@@ -16,6 +16,7 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/courses", label: "Courses", icon: BookOpen },
   { href: "/tasks", label: "Tasks", icon: CheckSquare2 },
+  { href: "/ai-import", label: "AI Import", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -92,4 +93,3 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

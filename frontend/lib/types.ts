@@ -43,3 +43,32 @@ export type DashboardData = {
   recent_tasks: Task[];
 };
 
+export type TaskDraft = {
+  title: string;
+  description: string | null;
+  deadline: string | null;
+  priority: TaskPriority;
+};
+
+export type ExtractionResult = {
+  course_name: string | null;
+  title: string;
+  deadline: string | null;
+  priority: TaskPriority;
+  tasks: TaskDraft[];
+};
+
+export type ImportCourseSelection =
+  | { mode: "EXISTING"; course_id: number }
+  | { mode: "CREATE_NEW"; name: string };
+
+export type ConfirmImportPayload = {
+  course: ImportCourseSelection;
+  draft: ExtractionResult;
+};
+
+export type ImportResult = {
+  course_created: boolean;
+  course: Course;
+  task: Task;
+};

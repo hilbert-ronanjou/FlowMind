@@ -1,4 +1,4 @@
-import type { Course, DashboardData, Task, TaskPriority, TaskStatus, User } from "@/lib/types";
+import type { ConfirmImportPayload, Course, DashboardData, ExtractionResult, ImportResult, Task, TaskPriority, TaskStatus, User } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -51,6 +51,16 @@ export const api = {
     }),
   me: () => request<User>("/auth/me"),
   logout: () => request<{ message: string }>("/auth/logout", { method: "POST" }),
+  extractContent: (text: string) =>
+    request<ExtractionResult>("/ai/extract", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  confirmImport: (payload: ConfirmImportPayload) =>
+    request<ImportResult>("/ai/import", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   dashboard: () => request<DashboardData>("/dashboard"),
   courses: () => request<Course[]>("/courses"),
   course: (id: number) => request<Course>(`/courses/${id}`),
