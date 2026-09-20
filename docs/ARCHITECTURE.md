@@ -1,6 +1,6 @@
 # Architecture
 
-## Current architecture: Sprint 2 / M1 Knowledge Foundation
+## Current architecture: Sprint 2 / M2 Document Ingestion Pipeline
 
 ```text
 Browser
@@ -56,6 +56,26 @@ The internal retrieval foundation requires both `user_id` and `course_id`, joins
 
 The embedding integration is server-side only. It reads the existing Model Studio API key and Beijing OpenAI-compatible base URL from environment configuration, uses `text-embedding-v4`, requests 1024 dimensions, validates every returned vector, applies a timeout, and maps provider failures to safe application errors.
 
+## Document ingestion
+
+```text
+Authenticated PDF upload
+   -> measured 20 MB validation and SHA-256
+   -> generated local storage key
+   -> Document(PROCESSING)
+   -> in-process BackgroundTask with a new DB Session
+   -> pypdf page extraction
+   -> page-local paragraph-aware chunks
+   -> batched text-embedding-v4 calls
+   -> one chunk-replacement / READY transaction
+```
+
+M2 accepts only text-extractable PDFs. User filenames are retained as metadata but never control disk paths; generated PDF object names are resolved beneath the configured storage root, and `storage_path` is excluded from API responses. The API enforces a measured 20 MB limit, a 20-active-document Course quota, content duplication rules, and explicit same-name conflicts.
+
+Processing never reuses the request SQLAlchemy Session. Parser, embedding, or persistence failures remove usable chunks and set a safe `FAILED` reason. Failed Documents can be retried from the stored PDF; startup recovery marks stale `PROCESSING` rows as interrupted rather than attempting automatic work. Processing Documents cannot be deleted, avoiding an in-process task/file race. Deleting a completed or failed Document removes its chunks through the existing cascade and deletes the controlled local PDF.
+
+M2 exposes authenticated upload, list, metadata, delete, and retry endpoints. Ownership is always checked through Course. It still exposes no knowledge-question API, grounded Qwen answer, citation generation, or frontend knowledge UI.
+
 ## Runtime and verification
 
 Docker Compose defines a local PostgreSQL 16 service with a persistent named volume. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by `FRONTEND_URL`, and its API address by `NEXT_PUBLIC_API_URL`.
@@ -70,4 +90,4 @@ Backend unit tests use an isolated in-memory SQLite database. A separately enabl
 
 ## Future / Planned
 
-Later explicitly scoped milestones may add document upload, parsing, chunking, knowledge-query APIs, RAG answers, and citations. None of those capabilities is implemented or authorized by M1. OSS, SLS, ECS, Redis, approximate vector indexes, and AI study planning also remain future-only. Inclusion here does not authorize implementation.
+Later explicitly scoped milestones may add knowledge-query APIs, RAG answers, citations, and frontend knowledge UI. None of those capabilities is implemented or authorized by M2. OCR, non-PDF formats, OSS, SLS, ECS, Redis, durable queues, approximate vector indexes, and AI study planning also remain future-only. Inclusion here does not authorize implementation.

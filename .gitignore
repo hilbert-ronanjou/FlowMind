@@ -12,3 +12,4 @@ frontend/.env.local
 *.tsbuildinfo
 .coverage
 htmlcov/
+storage/

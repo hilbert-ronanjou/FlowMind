@@ -1,18 +1,28 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import CurrentUser, DbSession
 from app.models.course import Course
+from app.models.document import Document, DocumentStatus
 from app.schemas.course import CourseCreate, CourseRead, CourseUpdate
+from app.services.knowledge.ingestion import resolve_storage_path
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-def owned_course_or_404(db: DbSession, user_id: int, course_id: int) -> Course:
-    course = db.scalar(
-        select(Course).where(Course.id == course_id, Course.user_id == user_id)
+def owned_course_or_404(
+    db: DbSession, user_id: int, course_id: int, *, for_update: bool = False
+) -> Course:
+    statement = select(Course).where(
+        Course.id == course_id, Course.user_id == user_id
     )
+    if for_update:
+        statement = statement.with_for_update()
+    course = db.scalar(statement)
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     return course
@@ -67,8 +77,31 @@ def update_course(
 def delete_course(
     course_id: int, db: DbSession, current_user: CurrentUser
 ) -> Response:
-    course = owned_course_or_404(db, current_user.id, course_id)
-    db.delete(course)
-    db.commit()
+    course = owned_course_or_404(db, current_user.id, course_id, for_update=True)
+    documents = list(
+        db.scalars(select(Document).where(Document.course_id == course_id))
+    )
+    if any(document.status == DocumentStatus.PROCESSING for document in documents):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "document_processing",
+                "message": "A course with a processing document cannot be deleted.",
+            },
+        )
+    try:
+        stored_files = [
+            resolve_storage_path(document.storage_path) for document in documents
+        ]
+        for stored_file in stored_files:
+            stored_file.unlink(missing_ok=True)
+        db.delete(course)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Could not delete course %s and its local documents", course_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The course could not be deleted.",
+        ) from None
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

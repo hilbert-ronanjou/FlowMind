@@ -45,9 +45,9 @@ Sprint 1 milestones M1-M5 are complete and frozen at the `v0.2.0-ai-import` base
 
 These completed stages do not authorize automatic import or any capability outside their documented boundary.
 
-## Current Sprint scope: Sprint 2 / M1 Knowledge Foundation
+### Sprint 2 / M1: Knowledge Foundation
 
-Sprint 2 / M1 establishes only the server-side foundation for the existing V1.0 Course material knowledge base / RAG module. The authorized proof is:
+Sprint 2 / M1 is complete at commit `336c605`. It established the server-side embedding and pgvector foundation for the existing V1.0 Course material knowledge base / RAG module:
 
 `Text -> Alibaba Cloud text-embedding-v4 -> 1024-dimensional vector -> PostgreSQL pgvector -> semantic similarity retrieval`
 
@@ -62,15 +62,36 @@ M1 is limited to:
 - retrieval foundations that join through Course and always filter by `Course.user_id`, `Document.course_id`, and `DocumentStatus.READY` before similarity ordering;
 - a database-level `UNIQUE(course_id, content_hash)` invariant that rejects identical material within one Course while allowing the same content in different Courses.
 
-M1 exposes no new frontend or knowledge-query API. It does not upload, parse, or chunk files. `filename` is metadata only and must never be treated as a storage path. Provider credentials remain server-side environment variables.
+M1 exposed no new frontend or knowledge-query API. Provider credentials remain server-side environment variables.
+
+## Current Sprint scope: Sprint 2 / M2 Document Ingestion Pipeline
+
+M2 is limited to the authenticated backend ingestion lifecycle for text-extractable PDF files:
+
+`PDF -> validation -> controlled local storage -> PROCESSING -> page-aware text extraction and chunking -> batched 1024-dimensional embeddings -> document_chunks -> READY / FAILED`
+
+The authorized M2 capability includes:
+
+- `POST /api/v1/courses/{course_id}/documents`, returning `202 Accepted` after validation, controlled storage, and creation of a `PROCESSING` Document;
+- a 20 MB measured upload limit and a maximum of 20 `READY + PROCESSING` Documents per Course;
+- SHA-256 duplicate detection through the existing `UNIQUE(course_id, content_hash)` invariant;
+- explicit same-filename/different-content conflict handling without document versioning;
+- `pypdf` text extraction for readable, non-OCR PDFs, preserving 1-based page numbers;
+- deterministic page-local, paragraph-aware chunks with centralized size and overlap configuration;
+- batched reuse of M1 `text-embedding-v4` embeddings with exactly 1024 dimensions;
+- transactionally replacing one Document's chunks and setting it to `READY`, or rolling back partial chunks and safely setting it to `FAILED`;
+- authenticated list, metadata, delete, and failed-processing retry APIs;
+- startup recovery that marks stale `PROCESSING` Documents as `FAILED` for explicit user retry;
+- generated local object names independent of the user-provided filename, with storage paths excluded from API responses.
+
+M2 adds no database table and does not change the M1 ownership rule: Document ownership is derived only through `documents.course_id -> courses.user_id`. M2 does not modify the frontend.
 
 ## Features still prohibited in the current Sprint
 
-The following remain prohibited during Sprint 2 / M1 even when they are mentioned elsewhere in the V1.0 product scope:
+The following remain prohibited during Sprint 2 / M2 even when they are mentioned elsewhere in the V1.0 product scope:
 
-- PDF upload or any other document-upload API/UI
-- PDF parsing, OCR, DOCX, or PPTX processing
-- a chunking pipeline
+- OCR or scanned-PDF recognition
+- DOCX, PPTX, image, web-page, or other non-PDF ingestion
 - Knowledge Query API
 - Qwen RAG answers, citations, or frontend RAG UI
 - Agent or multi-agent systems
@@ -80,6 +101,7 @@ The following remain prohibited during Sprint 2 / M1 even when they are mentione
 - ECS or other cloud infrastructure work
 - Redis
 - Celery or another background-job system
+- RabbitMQ or another durable task queue
 - Reranking, hybrid search, BM25, GraphRAG, HNSW, or IVFFlat
 - Chat memory or document versioning
 - Rate Limit
@@ -110,7 +132,7 @@ The following remain prohibited during Sprint 2 / M1 even when they are mentione
 
 ## Data constraints
 
-The business tables authorized through Sprint 2 / M1 are exactly:
+The business tables authorized through Sprint 2 / M2 are exactly:
 
 - `users`
 - `courses`
@@ -118,7 +140,7 @@ The business tables authorized through Sprint 2 / M1 are exactly:
 - `documents`
 - `document_chunks`
 
-The current business reason for `documents` is to record Course-owned material metadata, processing state, and future duplicate-detection input without implementing upload. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to prove 1024-dimensional embedding persistence and isolated semantic retrieval. No other schema is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, and API keys must never be hard-coded.
+The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings only after successful processing. No new M2 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, and internal provider details must never be exposed through document APIs.
 
 ## Change control
 
