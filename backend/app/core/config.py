@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -14,6 +15,8 @@ class Settings(BaseSettings):
     dashscope_api_key: str | None = None
     dashscope_base_url: str | None = None
     qwen_model: str | None = None
+    embedding_model: Literal["text-embedding-v4"] = "text-embedding-v4"
+    embedding_dimensions: Literal[1024] = 1024
 
     model_config = SettingsConfigDict(
         env_file=("../.env", ".env"),

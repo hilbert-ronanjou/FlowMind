@@ -28,4 +28,6 @@ class Course(Base):
 
     user: Mapped["User"] = relationship(back_populates="courses")  # noqa: F821
     tasks: Mapped[list["Task"]] = relationship(back_populates="course")  # noqa: F821
-
+    documents: Mapped[list["Document"]] = relationship(  # noqa: F821
+        back_populates="course", cascade="all, delete-orphan", passive_deletes=True
+    )

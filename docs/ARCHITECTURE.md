@@ -1,6 +1,6 @@
 # Architecture
 
-## Current architecture: v0.2.0 Sprint 1 baseline candidate
+## Current architecture: Sprint 2 / M1 Knowledge Foundation
 
 ```text
 Browser
@@ -10,11 +10,12 @@ Next.js Frontend
    |
    v
 FastAPI REST API
-   |-- PostgreSQL
-   `-- Alibaba Cloud Model Studio / Qwen
+   |-- PostgreSQL 16 + pgvector
+   |-- Alibaba Cloud Model Studio / Qwen structured extraction
+   `-- Alibaba Cloud Model Studio / text-embedding-v4
 ```
 
-The browser loads the Next.js frontend, whose client-side API layer calls FastAPI's versioned `/api/v1` REST API. FastAPI owns authentication, authorization, validation, persistence, and the server-side Qwen integration. PostgreSQL stores application data. SQLAlchemy models and Alembic manage the three core business tables: `users`, `courses`, and `tasks`; Alembic maintains its own revision metadata table.
+The browser loads the Next.js frontend, whose client-side API layer calls FastAPI's versioned `/api/v1` REST API. FastAPI owns authentication, authorization, validation, persistence, and the server-side Model Studio integrations. PostgreSQL stores application data. SQLAlchemy models and Alembic manage the five business tables: `users`, `courses`, `tasks`, `documents`, and `document_chunks`; Alembic maintains its own revision metadata table.
 
 JWT bearer tokens authenticate API requests. Every course and task query is constrained by the authenticated user ID.
 
@@ -39,11 +40,27 @@ Confirmation requires an owned existing Course or explicit new-Course creation. 
 
 Qwen credentials, region-specific API base URL, and model selection are backend environment variables. Provider errors are mapped to safe API responses without exposing provider credentials. The browser receives only the structured result or the application's error response.
 
+## Course knowledge foundation
+
+```text
+Text
+   -> server-side Embedding service
+   -> Alibaba Cloud text-embedding-v4 (1024 dimensions)
+   -> DocumentChunk.embedding Vector(1024)
+   -> PostgreSQL pgvector cosine-distance ordering
+```
+
+`Document` stores metadata and processing status for material belonging to exactly one Course. Course is the sole Document ownership source: User ownership is derived through `documents.course_id -> courses.user_id`, so `documents` does not duplicate `user_id`. The schema rejects duplicate `(course_id, content_hash)` values, prevents duplicate `(document_id, chunk_index)` values, and stores strict 1024-dimensional vectors. Course deletion cascades to Documents, User deletion cascades through Courses, and Document deletion cascades to Chunks.
+
+The internal retrieval foundation requires both `user_id` and `course_id`, joins each Chunk to its Document and Course, filters on `Course.user_id`, `Document.course_id`, and `DocumentStatus.READY`, and only then orders by vector distance. It does not provide a global-search path. There is no Knowledge Query API, RAG answer generation, citation flow, file upload, parser, or chunking pipeline in M1.
+
+The embedding integration is server-side only. It reads the existing Model Studio API key and Beijing OpenAI-compatible base URL from environment configuration, uses `text-embedding-v4`, requests 1024 dimensions, validates every returned vector, applies a timeout, and maps provider failures to safe application errors.
+
 ## Runtime and verification
 
 Docker Compose defines a local PostgreSQL 16 service with a persistent named volume. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by `FRONTEND_URL`, and its API address by `NEXT_PUBLIC_API_URL`.
 
-Backend unit tests use an isolated in-memory SQLite database. Real PostgreSQL browser acceptance and restart-persistence checks are separate from those tests. The six-case Qwen semantic regression script invokes the actual configured provider; deterministic API tests cover error handling and import validation without depending on provider availability.
+Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering and ownership/Course/status filters without a provider call. The explicit M1 regression invokes the actual embedding provider once in a batch, validates semantic ordering, stores dedicated rows in a real PostgreSQL transaction, performs two filtered pgvector searches, and rolls the transaction back. Ordinary pytest does not call Model Studio.
 
 ## Repository layout
 
@@ -53,4 +70,4 @@ Backend unit tests use an isolated in-memory SQLite database. Real PostgreSQL br
 
 ## Future / Planned
 
-The V1.0 global product scope includes a course-material knowledge base / RAG and AI study planning, but those modules are not implemented or authorized by Sprint 1. Document upload, embeddings, vector storage, OSS, SLS, and ECS are not current components. Any future design or infrastructure work requires its own explicitly scoped milestone; inclusion here does not authorize implementation.
+Later explicitly scoped milestones may add document upload, parsing, chunking, knowledge-query APIs, RAG answers, and citations. None of those capabilities is implemented or authorized by M1. OSS, SLS, ECS, Redis, approximate vector indexes, and AI study planning also remain future-only. Inclusion here does not authorize implementation.
