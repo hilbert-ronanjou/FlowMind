@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from app.models.course import Course
 from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
-from app.services.knowledge.retrieval import search_ready_chunks
+from app.services.knowledge.retrieval import (
+    search_ready_chunk_candidates,
+    search_ready_chunks,
+)
 
 
 POSTGRES_URL = os.getenv("TEST_POSTGRES_DATABASE_URL")
@@ -54,11 +57,13 @@ def test_vector_retrieval_orders_results_and_enforces_scope():
                 chunks=[
                     DocumentChunk(
                         chunk_index=0,
+                        page_number=1,
                         content="transaction",
                         embedding=unit_vector(0),
                     ),
                     DocumentChunk(
                         chunk_index=1,
+                        page_number=2,
                         content="process",
                         embedding=unit_vector(1),
                     ),
@@ -90,6 +95,21 @@ def test_vector_retrieval_orders_results_and_enforces_scope():
                     DocumentChunk(
                         chunk_index=0,
                         content="failed exact match",
+                        embedding=unit_vector(0),
+                    )
+                ],
+            ),
+            Document(
+                course=course,
+                filename="processing.txt",
+                storage_path=f"tests/{token}/processing.txt",
+                content_hash="e" * 64,
+                file_size=1,
+                status=DocumentStatus.PROCESSING,
+                chunks=[
+                    DocumentChunk(
+                        chunk_index=0,
+                        content="processing exact match",
                         embedding=unit_vector(0),
                     )
                 ],
@@ -126,6 +146,18 @@ def test_vector_retrieval_orders_results_and_enforces_scope():
 
         assert [chunk.content for chunk, _ in matches] == ["transaction", "process"]
         assert matches[0][1] < matches[1][1]
+
+        candidates = search_ready_chunk_candidates(
+            db,
+            user_id=owner.id,
+            course_id=course.id,
+            query_embedding=unit_vector(0),
+            limit=5,
+        )
+        assert [item.content for item in candidates] == ["transaction", "process"]
+        assert [item.filename for item in candidates] == ["ready.txt", "ready.txt"]
+        assert [item.page_number for item in candidates] == [1, 2]
+        assert candidates[0].distance < candidates[1].distance
 
         assert search_ready_chunks(
             db,

@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     document_chunk_overlap_chars: int = Field(default=200, ge=0)
     embedding_batch_size: int = Field(default=16, gt=0, le=128)
     document_processing_stale_seconds: int = Field(default=1800, gt=0)
+    knowledge_top_k: int = Field(default=5, gt=0, le=5)
 
     @model_validator(mode="after")
     def validate_document_chunking(self) -> Self:

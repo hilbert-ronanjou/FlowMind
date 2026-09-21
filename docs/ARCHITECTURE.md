@@ -1,6 +1,6 @@
 # Architecture
 
-## Current architecture: Sprint 2 / M2 Document Ingestion Pipeline
+## Current architecture: Sprint 2 / M3 Grounded RAG Query
 
 ```text
 Browser
@@ -52,7 +52,7 @@ Text
 
 `Document` stores metadata and processing status for material belonging to exactly one Course. Course is the sole Document ownership source: User ownership is derived through `documents.course_id -> courses.user_id`, so `documents` does not duplicate `user_id`. The schema rejects duplicate `(course_id, content_hash)` values, prevents duplicate `(document_id, chunk_index)` values, and stores strict 1024-dimensional vectors. Course deletion cascades to Documents, User deletion cascades through Courses, and Document deletion cascades to Chunks.
 
-The internal retrieval foundation requires both `user_id` and `course_id`, joins each Chunk to its Document and Course, filters on `Course.user_id`, `Document.course_id`, and `DocumentStatus.READY`, and only then orders by vector distance. It does not provide a global-search path. There is no Knowledge Query API, RAG answer generation, citation flow, file upload, parser, or chunking pipeline in M1.
+The internal retrieval foundation requires both `user_id` and `course_id`, joins each Chunk to its Document and Course, filters on `Course.user_id`, `Document.course_id`, and `DocumentStatus.READY`, and only then orders by vector distance. It does not provide a global-search path.
 
 The embedding integration is server-side only. It reads the existing Model Studio API key and Beijing OpenAI-compatible base URL from environment configuration, uses `text-embedding-v4`, requests 1024 dimensions, validates every returned vector, applies a timeout, and maps provider failures to safe application errors.
 
@@ -74,13 +74,35 @@ M2 accepts only text-extractable PDFs. User filenames are retained as metadata b
 
 Processing never reuses the request SQLAlchemy Session. Parser, embedding, or persistence failures remove usable chunks and set a safe `FAILED` reason. Failed Documents can be retried from the stored PDF; startup recovery marks stale `PROCESSING` rows as interrupted rather than attempting automatic work. Processing Documents cannot be deleted, avoiding an in-process task/file race. Deleting a completed or failed Document removes its chunks through the existing cascade and deletes the controlled local PDF.
 
-M2 exposes authenticated upload, list, metadata, delete, and retry endpoints. Ownership is always checked through Course. It still exposes no knowledge-question API, grounded Qwen answer, citation generation, or frontend knowledge UI.
+M2 exposes authenticated upload, list, metadata, delete, and retry endpoints. Ownership is always checked through Course.
+
+## Grounded knowledge query
+
+```text
+Authenticated question
+   -> Course ownership check
+   -> READY Document existence check
+   -> one text-embedding-v4 request (1024 dimensions)
+   -> Course + User + READY scoped pgvector cosine-distance search (Top 5)
+   -> Qwen strict GroundedAnswer structured output
+   -> candidate chunk ID validation
+   -> backend-only citation metadata construction
+   -> stable answer / no-answer response
+```
+
+`POST /api/v1/courses/{course_id}/knowledge/query` is JWT protected. The request question is trimmed, must be non-empty, and is limited to 2,000 characters. A Course that does not exist or is not owned by the authenticated user has the same `404` behavior. The retrieval query independently enforces the user, Course, and `READY` Document boundaries before ordering candidates by pgvector cosine distance. `KNOWLEDGE_TOP_K`, currently 5, is centrally configured.
+
+If there is no READY Document or retrieval returns no chunk, the endpoint returns the fixed domain no-answer result without calling Qwen; the no-READY path also avoids the embedding request. Otherwise Qwen receives only the untrusted question and the retrieved chunk IDs/content. The system instruction treats context as the only factual source, rejects prompt-injection instructions, forbids unsupported facts and chain-of-thought, and requires refusal when context is insufficient.
+
+Qwen's strict structured result contains only `answerable`, `answer`, and `used_chunk_ids`; extra properties are rejected. The backend verifies every used ID against the actual Top-5 candidate set, removes duplicate IDs, and deterministically resolves `document_id`, `filename`, `page_number`, and `chunk_id` from database-backed retrieval results. The model cannot supply or override citation metadata. A non-answer is normalized to the fixed public message and empty citations even if a provider result includes text or chunk IDs.
+
+Provider configuration, timeout, rate-limit, authentication, invalid embedding, invalid structured output, and grounding failures are mapped to stable responses without exposing provider URLs, credentials, prompts, document content, or SDK details. Diagnostics contain only Course ID, retrieval count/chunk IDs, latency, and token usage when supplied by the provider.
 
 ## Runtime and verification
 
 Docker Compose defines a local PostgreSQL 16 service with a persistent named volume. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by `FRONTEND_URL`, and its API address by `NEXT_PUBLIC_API_URL`.
 
-Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering and ownership/Course/status filters without a provider call. The explicit M1 regression invokes the actual embedding provider once in a batch, validates semantic ordering, stores dedicated rows in a real PostgreSQL transaction, performs two filtered pgvector searches, and rolls the transaction back. Ordinary pytest does not call Model Studio.
+Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering, citation metadata inputs, and ownership/Course/status filters without a provider call. The explicit M3 regression uploads a two-page PDF into real PostgreSQL with pgvector, invokes the real embedding provider for ingestion and each question, invokes real Qwen structured output for retrieved questions, verifies supported, unsupported, injection, citation, and cross-user behavior, and removes its dedicated rows and local file. Ordinary pytest does not call Model Studio.
 
 ## Repository layout
 
@@ -90,4 +112,4 @@ Backend unit tests use an isolated in-memory SQLite database. A separately enabl
 
 ## Future / Planned
 
-Later explicitly scoped milestones may add knowledge-query APIs, RAG answers, citations, and frontend knowledge UI. None of those capabilities is implemented or authorized by M2. OCR, non-PDF formats, OSS, SLS, ECS, Redis, durable queues, approximate vector indexes, and AI study planning also remain future-only. Inclusion here does not authorize implementation.
+Later explicitly scoped milestones may add a frontend Knowledge UI. Chat memory, multi-turn context, reranking, similarity thresholds, BM25/hybrid search, OCR, non-PDF formats, OSS, SLS, ECS, Redis, Celery, agents, MCP, approximate vector indexes, and AI study planning remain future-only. Inclusion here does not authorize implementation.
