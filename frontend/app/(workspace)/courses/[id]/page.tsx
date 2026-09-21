@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, CalendarDays, Pencil, Plus, Trash2, UserRound } from "lucide-react";
 
 import { CourseForm, type CoursePayload } from "@/components/course-form";
+import { CourseKnowledgeWorkspace } from "@/components/course-knowledge-workspace";
 import { EmptyState } from "@/components/empty-state";
 import { ErrorState } from "@/components/error-state";
 import { TaskRow } from "@/components/task-row";
@@ -80,6 +81,7 @@ export default function CourseDetailPage() {
           <div className="mt-7 flex flex-wrap gap-5 border-t border-slate-100 pt-5 text-sm text-slate-500"><span className="flex items-center gap-2"><UserRound className="h-4 w-4" />{course.teacher || "No teacher listed"}</span><span className="flex items-center gap-2"><CalendarDays className="h-4 w-4" />Added {new Date(course.created_at).toLocaleDateString()}</span></div>
         </CardContent>
       </Card>
+      <CourseKnowledgeWorkspace courseId={courseId} />
       <section className="mt-8">
         <div className="mb-4 flex items-center justify-between"><div><h2 className="text-lg font-bold text-ink">Course tasks</h2><p className="mt-1 text-sm text-slate-500">{tasks.length} {tasks.length === 1 ? "task" : "tasks"} linked to this course</p></div><Button asChild size="sm" variant="brand"><Link href="/tasks"><Plus className="h-4 w-4" />Manage tasks</Link></Button></div>
         {tasks.length ? <div className="space-y-2">{tasks.map((task) => <TaskRow key={task.id} task={task} course={course} compact />)}</div> : <EmptyState icon={<BookOpen className="h-6 w-6" />} title="No linked tasks" description="Create a task and choose this course to see it here." action={<Button asChild size="sm" variant="outline"><Link href="/tasks">Open tasks</Link></Button>} />}

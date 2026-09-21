@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -16,6 +17,7 @@ from app.services.knowledge.ingestion import (
     UploadValidationError,
     process_document,
     remove_stored_pdf,
+    resolve_storage_path,
     store_pdf_upload,
     stored_pdf_exists,
 )
@@ -54,6 +56,15 @@ def active_document_count(db: DbSession, course_id: int) -> int:
         )
         or 0
     )
+
+
+def safe_download_filename(filename: str) -> str:
+    sanitized = "".join(
+        character for character in filename if 32 <= ord(character) != 127
+    ).strip()
+    if not sanitized.lower().endswith(".pdf"):
+        return "document.pdf"
+    return sanitized or "document.pdf"
 
 
 @router.post(
@@ -216,6 +227,36 @@ def get_document(
     document_id: int, db: DbSession, current_user: CurrentUser
 ) -> Document:
     return owned_document_or_404(db, current_user.id, document_id)
+
+
+@router.get("/documents/{document_id}/file", response_class=FileResponse)
+def get_document_file(
+    document_id: int, db: DbSession, current_user: CurrentUser
+) -> FileResponse:
+    document = owned_document_or_404(db, current_user.id, document_id)
+    try:
+        stored_file = resolve_storage_path(document.storage_path)
+    except DocumentProcessingError:
+        logger.warning("Rejected unsafe storage path for document_id=%s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(
+                "source_file_missing", "The stored PDF is unavailable."
+            ),
+        ) from None
+    if not stored_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_detail(
+                "source_file_missing", "The stored PDF is unavailable."
+            ),
+        )
+    return FileResponse(
+        path=stored_file,
+        media_type="application/pdf",
+        filename=safe_download_filename(document.filename),
+        content_disposition_type="inline",
+    )
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

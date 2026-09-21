@@ -86,9 +86,9 @@ The authorized M2 capability includes:
 
 M2 added no database table and did not change the M1 ownership rule: Document ownership is derived only through `documents.course_id -> courses.user_id`. M2 did not modify the frontend.
 
-## Current Sprint scope: Sprint 2 / M3 Grounded RAG Query
+### Sprint 2 / M3: Grounded RAG Query
 
-M3 is limited to authenticated, single-turn, Course-scoped grounded questions:
+Sprint 2 / M3 is complete at commit `2d1f8f4`. It implemented authenticated, single-turn, Course-scoped grounded questions:
 
 `Question -> one 1024-dimensional embedding -> Course/User/READY-filtered pgvector retrieval -> strict Qwen structured answer -> backend-generated citations`
 
@@ -105,16 +105,35 @@ The authorized M3 capability includes:
 - an explicit no-answer response with no citations when the Course has no READY material, retrieval is empty, or Qwen declares the context insufficient;
 - stable, safe errors for embedding, Qwen, and invalid structured/grounding results.
 
-M3 adds no database table, conversation persistence, threshold, reranker, alternate retrieval strategy, or frontend change.
+M3 added no database table, conversation persistence, threshold, reranker, alternate retrieval strategy, or frontend change.
+
+## Current Sprint scope: Sprint 2 / M4 Course Knowledge UI
+
+M4 is limited to making the completed Document Ingestion and Grounded RAG capabilities usable from the existing Course Detail page:
+
+`Course Detail -> PDF upload/status/retry/delete -> grounded question -> backend citation -> secure source PDF`
+
+The authorized M4 capability includes:
+
+- Course-owned Document list, upload, processing status, safe failure details, retry, and delete controls;
+- approximately two-second polling only while the current Course has `PROCESSING` Documents;
+- JWT-protected `GET /api/v1/documents/{document_id}/file`, with ownership derived through Course and internal storage paths never exposed;
+- Course-scoped single-question submission with a 2,000-character limit and no student-facing model, embedding, retrieval, or generation settings;
+- normal rendering of both grounded answers with backend-generated citations and unanswerable results with no citations;
+- secure Citation source viewing using only the backend-provided `citation.document_id`;
+- temporary page-session question history held only in React state and discarded on refresh;
+- user-facing handling of the existing upload, state-conflict, authorization, validation, grounding, and provider errors.
+
+M4 adds no database table, persistent chat, multi-turn context, new retrieval behavior, new AI model configuration, or global Knowledge Base product.
 
 ## Features still prohibited in the current Sprint
 
-The following remain prohibited during Sprint 2 / M3 even when they are mentioned elsewhere in the V1.0 product scope:
+The following remain prohibited during Sprint 2 / M4 even when they are mentioned elsewhere in the V1.0 product scope:
 
 - OCR or scanned-PDF recognition
 - DOCX, PPTX, image, web-page, or other non-PDF ingestion
-- Frontend knowledge or RAG UI
 - Conversation persistence, chat memory, or multi-turn context
+- A global Knowledge Base product or PDF annotation/viewer system
 - Agent or multi-agent systems
 - Study Plan
 - OSS
@@ -153,7 +172,7 @@ The following remain prohibited during Sprint 2 / M3 even when they are mentione
 
 ## Data constraints
 
-The business tables authorized through Sprint 2 / M3 are exactly:
+The business tables authorized through Sprint 2 / M4 are exactly:
 
 - `users`
 - `courses`
@@ -161,7 +180,7 @@ The business tables authorized through Sprint 2 / M3 are exactly:
 - `documents`
 - `document_chunks`
 
-The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for M3. No new M3 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge APIs.
+The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M4 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
 
 ## Change control
 

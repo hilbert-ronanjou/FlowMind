@@ -1,6 +1,6 @@
 # Architecture
 
-## Current architecture: Sprint 2 / M3 Grounded RAG Query
+## Current architecture: Sprint 2 / M4 Course Knowledge UI
 
 ```text
 Browser
@@ -98,11 +98,29 @@ Qwen's strict structured result contains only `answerable`, `answer`, and `used_
 
 Provider configuration, timeout, rate-limit, authentication, invalid embedding, invalid structured output, and grounding failures are mapped to stable responses without exposing provider URLs, credentials, prompts, document content, or SDK details. Diagnostics contain only Course ID, retrieval count/chunk IDs, latency, and token usage when supplied by the provider.
 
+## Course knowledge interface and secure source access
+
+```text
+Course Detail
+   |-- Course Documents
+   |     |-- upload -> PROCESSING -> two-second polling -> READY / FAILED
+   |     |-- FAILED -> retry
+   |     `-- READY / FAILED -> confirmed delete
+   `-- Course Knowledge Questions
+         |-- one independent question -> grounded query API
+         |-- answer / normal no-answer result
+         `-- backend citation document_id -> authenticated PDF file endpoint
+```
+
+The existing Course Detail page owns the M4 interface; there is no global Knowledge Base route. Document polling exists only while the current Course contains a `PROCESSING` Document, uses one timer, and is cancelled with the component. Upload responses are inserted immediately as `PROCESSING`; retry updates the same Document; delete removes it from the current list after explicit confirmation. Temporary question history lives only in React state and intentionally disappears on refresh. It is not sent as multi-turn context.
+
+`GET /api/v1/documents/{document_id}/file` authenticates the caller, joins Document ownership through Course, resolves only the generated single-component storage key beneath the configured storage root, and returns `application/pdf` with a sanitized inline filename. Missing files, unsafe stored paths, and cross-user access produce stable non-disclosing `404` responses. The frontend fetches the PDF with JWT and creates a temporary browser object URL; it never receives or constructs a filesystem path. Citation links use only backend-generated `citation.document_id` and never parse metadata from answer text.
+
 ## Runtime and verification
 
 Docker Compose defines a local PostgreSQL 16 service with a persistent named volume. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by `FRONTEND_URL`, and its API address by `NEXT_PUBLIC_API_URL`.
 
-Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering, citation metadata inputs, and ownership/Course/status filters without a provider call. The explicit M3 regression uploads a two-page PDF into real PostgreSQL with pgvector, invokes the real embedding provider for ingestion and each question, invokes real Qwen structured output for retrieved questions, verifies supported, unsupported, injection, citation, and cross-user behavior, and removes its dedicated rows and local file. Ordinary pytest does not call Model Studio.
+Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering, citation metadata inputs, and ownership/Course/status filters without a provider call. File endpoint tests cover owner access, cross-user denial, missing files, path safety, PDF headers, and storage-path non-disclosure. The explicit browser acceptance uses real PostgreSQL, embedding, and Qwen through the Course UI and removes its dedicated rows and local file. Ordinary pytest does not call Model Studio.
 
 ## Repository layout
 
@@ -112,4 +130,4 @@ Backend unit tests use an isolated in-memory SQLite database. A separately enabl
 
 ## Future / Planned
 
-Later explicitly scoped milestones may add a frontend Knowledge UI. Chat memory, multi-turn context, reranking, similarity thresholds, BM25/hybrid search, OCR, non-PDF formats, OSS, SLS, ECS, Redis, Celery, agents, MCP, approximate vector indexes, and AI study planning remain future-only. Inclusion here does not authorize implementation.
+Chat persistence, multi-turn context, reranking, similarity thresholds, BM25/hybrid search, OCR, non-PDF formats, PDF annotation/viewer systems, OSS, SLS, ECS, Redis, Celery, agents, MCP, approximate vector indexes, and AI study planning remain future-only. Inclusion here does not authorize implementation.

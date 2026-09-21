@@ -72,3 +72,30 @@ export type ImportResult = {
   course: Course;
   task: Task;
 };
+
+export type DocumentStatus = "PROCESSING" | "READY" | "FAILED";
+
+export type CourseDocument = {
+  id: number;
+  course_id: number;
+  filename: string;
+  content_hash: string;
+  file_size: number;
+  status: DocumentStatus;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type KnowledgeCitation = {
+  document_id: number;
+  filename: string;
+  page_number: number;
+  chunk_id: number;
+};
+
+export type KnowledgeAnswer = {
+  answerable: boolean;
+  answer: string;
+  citations: KnowledgeCitation[];
+};

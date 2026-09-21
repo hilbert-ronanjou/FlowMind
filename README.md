@@ -1,10 +1,10 @@
-# FlowMind AI Cloud v0.2.0
+# FlowMind AI Cloud
 
-FlowMind AI Cloud is a focused learning workspace for university students. It combines authentication, courses, tasks, a real-data dashboard, and user-confirmed AI extraction.
+FlowMind AI Cloud is a focused learning workspace for university students. It combines authentication, courses, tasks, a real-data dashboard, user-confirmed AI extraction, and Course-scoped grounded knowledge from uploaded PDFs.
 
 ## Current stage
 
-Sprint 0 and Sprint 1 milestones M1-M5 are implemented and accepted locally. Version **v0.2.0** is ready as the Sprint 1 baseline candidate; establishing its Git commit and tag still requires final Product Owner approval. No commit or tag is created by M5.
+Sprint 0, Sprint 1, and Sprint 2 milestones M1-M3 are complete. The current authorized stage is **Sprint 2 / M4 Course Knowledge UI**, which exposes the existing PDF ingestion and grounded query capabilities inside Course Detail without adding new retrieval algorithms or persistent chat.
 
 The V1.0 product boundary and current sprint restrictions remain defined in [`docs/SCOPE.md`](docs/SCOPE.md).
 
@@ -15,6 +15,7 @@ The V1.0 product boundary and current sprint restrictions remain defined in [`do
 - Database: PostgreSQL
 - Authentication: hashed passwords and JWT bearer tokens
 - AI extraction: Alibaba Cloud Model Studio / Qwen structured output, validated with Pydantic
+- Course knowledge: text-extractable PDF ingestion, 1024-dimensional Model Studio embeddings, PostgreSQL pgvector retrieval, and grounded Qwen answers
 - Local infrastructure: Docker Compose for PostgreSQL only
 
 ## Project structure
@@ -104,8 +105,10 @@ Open `http://localhost:3000`. The browser origin must match the backend's `FRONT
 - AI Structured Extraction: JWT-protected `POST /api/v1/ai/extract`, Qwen structured output, schema validation, and safe provider error responses.
 - Draft Review: `/ai-import` with editable extraction results, loading, retry, and error states.
 - Confirmed AI Import: JWT-protected `POST /api/v1/ai/import`, explicit course selection or creation, backend revalidation, and transactional persistence.
+- Course Documents: PDF upload, processing status polling, safe failures, retry, delete, and authenticated source-file viewing on Course Detail.
+- Grounded Course Questions: single-turn questions against READY Course material, strict structured output, backend-generated citations, normal no-answer results, and temporary page-session history.
 - Existing landing, login, register, dashboard, courses, course detail, tasks, settings, and AI Import pages, with responsive navigation and form feedback.
-- Alembic migration for the three core business tables: `users`, `courses`, and `tasks`.
+- PostgreSQL persistence for `users`, `courses`, `tasks`, `documents`, and `document_chunks`, with pgvector enabled through Alembic.
 
 ## AI workflow
 
@@ -138,19 +141,21 @@ pnpm build
 
 Backend tests use an isolated in-memory SQLite database for speed; application runtime and Alembic target PostgreSQL.
 
-Run the existing real Qwen semantic regression separately from the backend directory:
+Real provider regressions are explicit scripts and are not part of ordinary pytest. For example, run the grounded RAG regression from the backend directory:
 
 ```powershell
-python scripts/test_qwen_structured.py
+python scripts/test_grounded_rag_e2e.py
 ```
 
-It calls the configured Qwen service for six unchanged semantic cases: explicit course notice, missing date, explicit relative date, vague "next week", non-task conversation, and prompt injection. It reports structured output and semantic failures and requires working provider credentials and network access.
+It requires working Model Studio credentials, PostgreSQL with pgvector, and network access. It uploads dedicated material, exercises real embeddings and grounded Qwen answers, checks citations and isolation, and removes its dedicated data and local file.
 
-SQLite unit tests do not prove PostgreSQL persistence. M5 acceptance additionally runs the real browser, frontend, backend, Qwen service, and PostgreSQL through registration, manual Course/Task creation, extraction, draft editing, confirmation, refresh, and service restart. Verify `alembic current` against the existing migration, confirm the three core business tables, and remove only the dedicated acceptance-test users and their data afterward.
+SQLite unit tests do not prove PostgreSQL persistence. M4 acceptance additionally runs the real browser, frontend, backend, Qwen service, and PostgreSQL through Course PDF upload, processing polling, grounded questions, Citation source viewing, upload conflicts, retry/delete, refresh behavior, and cross-user authorization. Acceptance data and local PDFs must be removed afterward.
 
 ## Not implemented
 
-- RAG, document upload, PDF parsing, embeddings, or vector databases
+- Persistent chat or multi-turn memory
+- Reranking, BM25, hybrid search, GraphRAG, or similarity-threshold tuning
+- OCR, non-PDF ingestion, or a PDF annotation/viewer system
 - AI study plans
 - Agents, subtasks, rate limiting, notifications, or multi-model routing
 - OSS, SLS, ECS, Redis, or production deployment

@@ -466,6 +466,9 @@ def test_document_apis_enforce_cross_user_404(
     assert client.get(
         f"/api/v1/documents/{document.id}", headers=intruder_headers
     ).status_code == 404
+    assert client.get(
+        f"/api/v1/documents/{document.id}/file", headers=intruder_headers
+    ).status_code == 404
     assert client.delete(
         f"/api/v1/documents/{document.id}", headers=intruder_headers
     ).status_code == 404
@@ -477,6 +480,84 @@ def test_document_apis_enforce_cross_user_404(
         headers=intruder_headers,
         files={"file": ("intrusion.pdf", make_pdf(["Intrusion"]), "application/pdf")},
     ).status_code == 404
+
+
+def test_owner_can_open_pdf_without_storage_path_disclosure(
+    client: TestClient, db: Session
+):
+    token = register_user(client, "file-owner@example.com")
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    course_id = create_course(client, headers, "File Course")
+    course = db.get(Course, course_id)
+    assert course is not None
+    pdf = make_pdf(["Secure source PDF"])
+    document = add_document(
+        db,
+        course=course,
+        filename="course source.pdf",
+        content_hash="f" * 64,
+        status=DocumentStatus.READY,
+        content=pdf,
+    )
+    storage_path = document.storage_path
+    db.commit()
+
+    response = client.get(
+        f"/api/v1/documents/{document.id}/file", headers=headers
+    )
+
+    assert response.status_code == 200
+    assert response.content == pdf
+    assert response.headers["content-type"] == "application/pdf"
+    assert response.headers["content-disposition"].startswith("inline")
+    assert "course%20source.pdf" in response.headers["content-disposition"]
+    assert storage_path not in str(response.headers)
+
+
+def test_document_file_missing_and_unsafe_paths_are_safe(
+    client: TestClient, db: Session, tmp_path: Path
+):
+    token = register_user(client, "file-safety@example.com")
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    course_id = create_course(client, headers, "File Safety")
+    course = db.get(Course, course_id)
+    assert course is not None
+    missing = add_document(
+        db,
+        course=course,
+        filename="missing.pdf",
+        content_hash="1" * 64,
+        status=DocumentStatus.READY,
+    )
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"private outside data")
+    unsafe = add_document(
+        db,
+        course=course,
+        filename="unsafe.pdf",
+        content_hash="2" * 64,
+        status=DocumentStatus.READY,
+    )
+    unsafe.storage_path = str(outside.resolve())
+    db.commit()
+
+    missing_response = client.get(
+        f"/api/v1/documents/{missing.id}/file", headers=headers
+    )
+    unsafe_response = client.get(
+        f"/api/v1/documents/{unsafe.id}/file", headers=headers
+    )
+
+    assert missing_response.status_code == 404
+    assert missing_response.json() == {
+        "detail": {
+            "code": "source_file_missing",
+            "message": "The stored PDF is unavailable.",
+        }
+    }
+    assert unsafe_response.status_code == 404
+    assert b"private outside data" not in unsafe_response.content
+    assert str(outside).encode() not in unsafe_response.content
 
 
 def test_delete_removes_chunks_and_local_file(
