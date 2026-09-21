@@ -107,13 +107,13 @@ The authorized M3 capability includes:
 
 M3 added no database table, conversation persistence, threshold, reranker, alternate retrieval strategy, or frontend change.
 
-## Current Sprint scope: Sprint 2 / M4 Course Knowledge UI
+### Sprint 2 / M4: Course Knowledge UI
 
-M4 is limited to making the completed Document Ingestion and Grounded RAG capabilities usable from the existing Course Detail page:
+Sprint 2 / M4 is complete at commit `6e9cc03`. It made the completed Document Ingestion and Grounded RAG capabilities usable from the existing Course Detail page:
 
 `Course Detail -> PDF upload/status/retry/delete -> grounded question -> backend citation -> secure source PDF`
 
-The authorized M4 capability includes:
+The completed M4 capability includes:
 
 - Course-owned Document list, upload, processing status, safe failure details, retry, and delete controls;
 - approximately two-second polling only while the current Course has `PROCESSING` Documents;
@@ -124,11 +124,33 @@ The authorized M4 capability includes:
 - temporary page-session question history held only in React state and discarded on refresh;
 - user-facing handling of the existing upload, state-conflict, authorization, validation, grounding, and provider errors.
 
-M4 adds no database table, persistent chat, multi-turn context, new retrieval behavior, new AI model configuration, or global Knowledge Base product.
+M4 added no database table, persistent chat, multi-turn context, new retrieval behavior, new AI model configuration, or global Knowledge Base product.
+
+## Current Sprint scope: Sprint 2 / M5 RAG Evaluation and Final Acceptance
+
+M5 is limited to establishing a fixed, repeatable evaluation baseline for the completed Course-scoped RAG pipeline and completing Sprint 2 regression, security, persistence, browser, and documentation acceptance. It adds no product capability.
+
+The authorized M5 work includes:
+
+- a small project-authored evaluation dataset covering direct facts, semantic paraphrases, nearby evidence, unsupported questions, prompt injection, Course isolation, and User isolation;
+- an explicitly invoked evaluation harness that uses the real authenticated APIs, PostgreSQL/pgvector, PDF ingestion, `text-embedding-v4`, retrieval, Qwen structured output, backend citations, and final cleanup;
+- deterministic or semi-deterministic checks for retrieval Hit@5, expected key facts, source support, Citation correctness, and abstention correctness;
+- per-query latency observations for the reliably measurable embedding, retrieval, Qwen, and total stages;
+- provider request counts and provider-reported Qwen token usage, without estimating unavailable usage;
+- full backend, opt-in PostgreSQL vector, frontend, browser, database/storage, and security regressions;
+- documentation of measured results and failures, plus narrowly scoped fixes for concrete bugs exposed by evaluation.
+
+The evaluation harness is not a business API and ordinary pytest must not run the paid real-provider evaluation automatically. M5 does not authorize changes intended only to improve an evaluation score.
+
+### M5 final-acceptance status: Completed
+
+Sprint 2 / M5 is completed. The fixed 25-case baseline executed 24 real grounded queries plus one cross-User security case against PostgreSQL/pgvector, `text-embedding-v4`, and Qwen. It measured Retrieval Hit@5 at 16/16, answer correctness and groundedness at 14/16, answerable Citation coverage at 14/16, emitted Citation correctness at 14/14, abstention at 8/8, and prompt-injection handling at 3/3. The two semantic-paraphrase failures retrieved the correct page at Top-1 but Qwen conservatively abstained; they are recorded rather than tuned during M5.
+
+Full backend pytest, the opt-in real PostgreSQL vector test, frontend lint/typecheck/production build, Alembic current/check, database/storage cleanup, security scans, and the real browser registration/login/upload/query/Citation/refusal/refresh flow passed. No database table, business API, business page, model setting, or retrieval behavior was added.
 
 ## Features still prohibited in the current Sprint
 
-The following remain prohibited during Sprint 2 / M4 even when they are mentioned elsewhere in the V1.0 product scope:
+The following remain prohibited during Sprint 2 / M5 even when they are mentioned elsewhere in the V1.0 product scope:
 
 - OCR or scanned-PDF recognition
 - DOCX, PPTX, image, web-page, or other non-PDF ingestion
@@ -172,7 +194,7 @@ The following remain prohibited during Sprint 2 / M4 even when they are mentione
 
 ## Data constraints
 
-The business tables authorized through Sprint 2 / M4 are exactly:
+The business tables authorized through Sprint 2 / M5 are exactly:
 
 - `users`
 - `courses`
@@ -180,7 +202,7 @@ The business tables authorized through Sprint 2 / M4 are exactly:
 - `documents`
 - `document_chunks`
 
-The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M4 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
+The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M5 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
 
 ## Change control
 

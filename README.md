@@ -4,7 +4,7 @@ FlowMind AI Cloud is a focused learning workspace for university students. It co
 
 ## Current stage
 
-Sprint 0, Sprint 1, and Sprint 2 milestones M1-M3 are complete. The current authorized stage is **Sprint 2 / M4 Course Knowledge UI**, which exposes the existing PDF ingestion and grounded query capabilities inside Course Detail without adding new retrieval algorithms or persistent chat.
+Sprint 0, Sprint 1, and Sprint 2 milestones M1-M4 are complete. The current authorized stage is **Sprint 2 / M5 RAG Evaluation and Final Acceptance**. M5 adds a repeatable real-provider evaluation baseline and release regressions without adding product features, retrieval algorithms, or persistent chat.
 
 The V1.0 product boundary and current sprint restrictions remain defined in [`docs/SCOPE.md`](docs/SCOPE.md).
 
@@ -121,6 +121,48 @@ AI does not directly write to the database. Extraction returns an editable draft
 
 The backend validates the confirmed draft and Course ownership again. It creates exactly one Task with source `AI`; extracted steps are stored in its description and weak suggestions remain optional description content. All Course and Task writes for that confirmation share one transaction. The import endpoint does not call Qwen.
 
+## Course knowledge architecture
+
+```text
+PDF
+  -> Parse
+  -> Page-aware Chunk
+  -> text-embedding-v4
+  -> PostgreSQL pgvector
+
+Question
+  -> text-embedding-v4
+  -> User + Course + READY scoped Top-5 retrieval
+  -> Qwen grounded structured output
+  -> Backend-generated Citation
+```
+
+The browser never receives storage paths, embeddings, provider credentials, or model-produced document metadata. Source links use backend-generated `citation.document_id` and the authenticated PDF endpoint.
+
+## RAG evaluation results
+
+The fixed Sprint 2/M5 dataset contains 25 project-authored cases: 9 direct facts, 4 semantic paraphrases, 2 nearby-evidence questions, 5 unsupported questions, 3 prompt-injection cases, 1 cross-Course case, and 1 cross-User case. The explicit harness executed 24 real knowledge queries; the cross-User case consists of rejected query/list/file requests.
+
+These measurements come from this 25-case synthetic baseline. They do not represent the overall accuracy of FlowMind on real, large-scale Course material collections.
+
+Measured baseline on 2026-09-21 using real PostgreSQL/pgvector, `text-embedding-v4`, and Qwen:
+
+- Retrieval Hit@5: **16/16 (100%)**
+- Answer correctness: **14/16 (87.5%)**
+- Groundedness: **14/16 (87.5%)**
+- Answerable Citation coverage: **14/16 (87.5%)**
+- Emitted Citation correctness: **14/14 (100%)**
+- Abstention correctness: **8/8 (100%)**
+- Prompt-injection cases: **3/3 passed**
+- Course isolation: **24/24 queries passed**
+- User isolation: query, document list, and PDF access all returned `404` without additional provider calls
+
+The two recorded failures are `paraphrase_channel` and `paraphrase_headcount`. Their expected evidence was retrieved at Top-1, but Qwen conservatively returned unanswerable, so no unsupported answer or Citation was emitted. The baseline preserves these failures rather than changing Ground Truth or tuning the pipeline during M5.
+
+Average/median latency across 24 queries was 695.05/619.00 ms for question embedding, 7.67/7.21 ms for retrieval, 8716.10/8460.29 ms for Qwen, and 9460.11/9354.57 ms total. The approximately 9.35-second median total latency is recorded as a future UX optimization candidate; Sprint 2 does not change the production pipeline in response. The run made 29 embedding requests (5 ingestion and 24 question), 24 Qwen requests, and used 15,272 prompt plus 7,075 completion tokens: 22,347 total, averaging 931.12 total tokens per evaluated query. The embedding provider does not expose token usage, so no embedding token estimate is reported.
+
+The fixed input is [`backend/evaluation/rag_baseline.json`](backend/evaluation/rag_baseline.json), and the measured output is [`backend/evaluation/sprint2_m5_results.json`](backend/evaluation/sprint2_m5_results.json).
+
 ## Tests and verification
 
 Backend:
@@ -141,15 +183,15 @@ pnpm build
 
 Backend tests use an isolated in-memory SQLite database for speed; application runtime and Alembic target PostgreSQL.
 
-Real provider regressions are explicit scripts and are not part of ordinary pytest. For example, run the grounded RAG regression from the backend directory:
+Real provider regressions are explicit scripts and are not part of ordinary pytest. Run the M5 baseline from the backend directory:
 
 ```powershell
-python scripts/test_grounded_rag_e2e.py
+python scripts/evaluate_rag.py --output evaluation/sprint2_m5_results.json
 ```
 
-It requires working Model Studio credentials, PostgreSQL with pgvector, and network access. It uploads dedicated material, exercises real embeddings and grounded Qwen answers, checks citations and isolation, and removes its dedicated data and local file.
+It requires working Model Studio credentials, PostgreSQL with pgvector, and network access. It uploads dedicated synthetic material, records retrieval/answers/latency/provider usage, checks evidence, citations, abstention, injection and isolation, and removes its dedicated rows and local files even when the run fails.
 
-SQLite unit tests do not prove PostgreSQL persistence. M4 acceptance additionally runs the real browser, frontend, backend, Qwen service, and PostgreSQL through Course PDF upload, processing polling, grounded questions, Citation source viewing, upload conflicts, retry/delete, refresh behavior, and cross-user authorization. Acceptance data and local PDFs must be removed afterward.
+SQLite unit tests do not prove PostgreSQL persistence. Sprint 2 acceptance additionally runs the real browser, frontend, backend, Qwen service, and PostgreSQL through Course PDF upload, processing polling, grounded questions, Citation source viewing, refusal, refresh behavior, and cross-user authorization. Acceptance data and local PDFs must be removed afterward.
 
 ## Not implemented
 
