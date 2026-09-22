@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -7,6 +8,7 @@ from openai import APITimeoutError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings
 from app.models.course import Course
 from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
@@ -18,6 +20,28 @@ from app.services.embedding import (
     embed_texts,
     embed_texts_with_client,
 )
+
+
+@pytest.mark.parametrize("env_template", [None, ".env.example", ".env.production.example"])
+def test_settings_use_fixed_embedding_dimensions_without_env_variable(
+    monkeypatch, env_template
+):
+    monkeypatch.delenv("EMBEDDING_DIMENSIONS", raising=False)
+    monkeypatch.delenv("embedding_dimensions", raising=False)
+    env_file = (
+        Path(__file__).resolve().parents[2] / env_template
+        if env_template is not None
+        else None
+    )
+
+    settings = Settings(
+        _env_file=env_file,
+        database_url="postgresql+psycopg://test:test@localhost/flowmind_test",
+        jwt_secret="test-only-secret-for-settings-validation",
+    )
+
+    assert settings.embedding_dimensions == 1024
+    assert isinstance(settings.embedding_dimensions, int)
 
 
 def document_fixture() -> tuple[User, Course, Document]:
