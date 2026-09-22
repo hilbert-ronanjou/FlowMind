@@ -10,7 +10,13 @@ RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
 FROM base AS dependencies
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,id=flowmind-pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store \
+    && pnpm install \
+        --frozen-lockfile \
+        --fetch-timeout=300000 \
+        --fetch-retries=4 \
+        --network-concurrency=4
 
 FROM base AS builder
 WORKDIR /app
