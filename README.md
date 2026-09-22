@@ -4,7 +4,7 @@ FlowMind AI Cloud is a focused learning workspace for university students. It co
 
 ## Current stage
 
-Sprint 0, Sprint 1, and Sprint 2 milestones M1-M4 are complete. The current authorized stage is **Sprint 2 / M5 RAG Evaluation and Final Acceptance**. M5 adds a repeatable real-provider evaluation baseline and release regressions without adding product features, retrieval algorithms, or persistent chat.
+Sprint 0, Sprint 1, Sprint 2, and Sprint 3 / M1-A are complete. M1-A passed Owner Review. The current authorized stage is **Sprint 3 / M1-B Production Compose & Delivery Baseline**: HTTP-only Nginx ingress, gated production Compose, minimal CI, and runtime acceptance without business changes.
 
 The V1.0 product boundary and current sprint restrictions remain defined in [`docs/SCOPE.md`](docs/SCOPE.md).
 
@@ -109,7 +109,9 @@ The Backend image uses Python 3.12.14, installs the declared requirements under 
 
 Production must supply `DOCUMENT_STORAGE_ROOT=/var/lib/flowmind/documents` and mount a persistent, writable volume there. A named volume inherits the image directory ownership; a host bind mount must be writable by UID/GID 10001. PDF files are never part of the image. The database continues to store only generated relative storage keys.
 
-The Frontend image uses Node 24.19.0, pnpm 11.25.0, the frozen pnpm lockfile, and Next.js standalone output. `NEXT_PUBLIC_API_URL` is public build-time configuration and the Docker build enforces the same-origin value `/api/v1`; it must never contain a secret or an internal Docker service name. Routing `/api/v1` to the Backend is intentionally deferred to the later Nginx/production-topology milestone.
+The Frontend image uses Node 24.19.0, pnpm 11.25.0, the frozen pnpm lockfile, and Next.js standalone output. `NEXT_PUBLIC_API_URL` is public build-time configuration and the Docker build enforces the same-origin value `/api/v1`; it must never contain a secret or an internal Docker service name. M1-B routes `/api/v1` through Nginx to Backend using the separate `compose.prod.yml` stack.
+
+For production prerequisites, secret-file setup, fresh startup, migration gates, health, and safe shutdown, follow [the deployment runbook](docs/DEPLOYMENT.md). The development `docker-compose.yml` is unchanged by M1-B. **Never run `down -v` against data you need to retain.**
 
 Environment contracts are documented in `.env.example` for local development and `.env.production.example` for production. Values such as `DATABASE_URL`, `JWT_SECRET`, Model Studio credentials, `FRONTEND_URL`, and Document settings are Backend runtime configuration. No real secret belongs in either example or any image layer.
 

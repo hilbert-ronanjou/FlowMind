@@ -148,7 +148,7 @@ Sprint 2 / M5 is completed. The fixed 25-case baseline executed 24 real grounded
 
 Full backend pytest, the opt-in real PostgreSQL vector test, frontend lint/typecheck/production build, Alembic current/check, database/storage cleanup, security scans, and the real browser registration/login/upload/query/Citation/refusal/refresh flow passed. No database table, business API, business page, model setting, or retrieval behavior was added.
 
-## Current Sprint scope: Sprint 3 / M1-A Production Container Foundation
+### Sprint 3 / M1-A: Production Container Foundation — Completed
 
 M1-A is limited to establishing a secure, repeatable production-container foundation without changing business behavior. The authorized work is:
 
@@ -162,12 +162,28 @@ M1-A is limited to establishing a secure, repeatable production-container founda
 
 M1-A does not authorize Nginx, HTTPS, a complete production Compose stack, GitHub Actions, ECS, SLS, Prometheus, Grafana, Redis, Celery, Kubernetes, microservices, schema changes, or any RAG / AI behavior change. Alembic migrations remain an explicit deployment gate and are never run from an application Dockerfile or automatically by every Backend replica.
 
+M1-A passed real Docker runtime acceptance and Owner Review. Its preceding restrictions describe that completed stage, not the newly authorized M1-B work.
+
+## Current Sprint scope: Sprint 3 / M1-B Production Compose & Delivery Baseline
+
+M1-B reuses the approved M1-A images without changing business behavior. Authorized work is limited to:
+
+- a separate production Compose stack with PostgreSQL, one-shot migration, single-worker/single-replica Backend, Frontend, and Nginx;
+- PostgreSQL health -> successful Alembic migration -> Backend readiness -> Nginx startup gates;
+- Nginx as the only published HTTP entry point, same-origin `/api/v1` routing, and one private Docker bridge with provider egress;
+- independent persistent PostgreSQL and Document volumes and runtime-only secret files;
+- minimal GitHub Actions regression, pgvector integration, and image-build CI without paid provider calls or deployment;
+- a deployment runbook and isolated fresh-volume same-origin, persistence, failure, and security acceptance.
+
+No database schema, business API, UI, RAG prompt, Top-K, chunking, embedding model, retrieval algorithm, or AI Import behavior change is authorized. HTTPS and domain work belong to M2. No commit or tag is authorized before Owner Review.
+
 ## Features still prohibited in the current Sprint
 
-The following remain prohibited during Sprint 3 / M1-A even when they are mentioned elsewhere in the V1.0 product scope:
+The following remain prohibited during Sprint 3 / M1-B even when they are mentioned elsewhere in the V1.0 product scope:
 
-- Nginx, HTTPS, or a complete production Compose deployment
-- GitHub Actions or other CI/CD implementation
+- HTTPS, domain configuration, or cloud deployment
+- CD or automatic deployment (minimal regression CI is authorized)
+- Backup automation
 - Prometheus, Grafana, or SLS observability implementation
 
 - OCR or scanned-PDF recognition
@@ -212,7 +228,7 @@ The following remain prohibited during Sprint 3 / M1-A even when they are mentio
 
 ## Data constraints
 
-The business tables authorized through Sprint 3 / M1-A are exactly:
+The business tables authorized through Sprint 3 / M1-B are exactly:
 
 - `users`
 - `courses`

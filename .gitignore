@@ -14,3 +14,4 @@ frontend/.env.local
 .coverage
 htmlcov/
 storage/
+secrets/

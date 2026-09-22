@@ -1,14 +1,15 @@
 # Architecture
 
-## Current architecture: Sprint 3 / M1-A Production Container Foundation
+## Current architecture: Sprint 3 / M1-B Production Compose & Delivery Baseline
 
 ```text
 Browser
    |
    v
-Next.js Frontend
-   |
-   v
+Nginx (only published HTTP port)
+   |-- /api/v1/* -> FastAPI REST API
+   `-- other requests -> Next.js Frontend
+
 FastAPI REST API
    |-- PostgreSQL 16 + pgvector
    |-- Alibaba Cloud Model Studio / Qwen structured extraction
@@ -124,7 +125,9 @@ Docker Compose defines a local PostgreSQL 16 service using the pgvector project'
 
 `GET /health/live` checks only that the FastAPI process can answer. `GET /health/ready` checks a basic PostgreSQL query and a temporary read/write probe beneath the configured Document Storage root. Readiness never calls Qwen or the Embedding provider and does not repeat Alembic or pgvector deployment gates. The legacy `GET /health` remains for compatibility.
 
-M1-A does not yet provide Nginx, HTTPS, a complete production Compose topology, or CI. Those are separate deployment concerns and no Backend, Frontend, or database port is declared public by this architecture document.
+M1-A is complete and Owner-approved. M1-B adds `compose.prod.yml` independently of the development Compose file. A single private bridge connects all five services; outbound provider connectivity remains enabled. Only Nginx publishes a host port (loopback by default). PostgreSQL health gates a one-shot `alembic upgrade head` service; its successful exit gates the single Backend worker. Backend and Frontend health gate Nginx startup. Health probes never call paid providers. Runtime failures mark containers unhealthy; this is not an automatic failover system.
+
+Production secrets are read-only Compose secret files. PostgreSQL uses `POSTGRES_PASSWORD_FILE`; Backend and migration reuse the existing settings loader with a secret mounted at `/app/.env`. No secret is passed into a build or a browser variable. PostgreSQL and PDFs use separate project-scoped persistent volumes. See `DEPLOYMENT.md` for lifecycle, permissions, restart behavior, and data-loss warnings. Minimal GitHub Actions CI tests dependencies, real pgvector integration, Frontend checks, and both Docker builds without provider credentials. HTTPS, domain configuration, cloud deployment, and CD remain deferred.
 
 Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering, citation metadata inputs, and ownership/Course/status filters without a provider call. File endpoint tests cover owner access, cross-user denial, missing files, path safety, PDF headers, and storage-path non-disclosure. The explicit browser acceptance uses real PostgreSQL, embedding, and Qwen through the Course UI and removes its dedicated rows and local file. Ordinary pytest does not call Model Studio.
 
