@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from pypdf import PdfWriter
+from pypdf import PageObject, PdfWriter
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -27,6 +27,7 @@ from app.services.knowledge.ingestion import (
     resolve_storage_path,
     split_page_text,
     normalize_original_filename,
+    normalize_page_text,
 )
 from conftest import TEST_STORAGE_ROOT, TestingSession, register_user
 
@@ -146,6 +147,73 @@ def test_page_aware_chunking_and_overlap():
     )
     assert {draft.page_number for draft in drafts} == {1, 2}
     assert all(not ("A" in draft.content and "B" in draft.content) for draft in drafts)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("辽宁省博物馆\x00赓续家国情怀", "辽宁省博物馆赓续家国情怀"),
+        ("\x00First\x00\x00 paragraph\x00", "First paragraph"),
+        ("Normal text\nSecond line\n\nNext paragraph", "Normal text\nSecond line\n\nNext paragraph"),
+        # Keep the existing whitespace policy, not a new control-character filter.
+        ("First\x00\tline\r\nSecond line", "First line\nSecond line"),
+        ("First\tline\r\nSecond line", "First line\nSecond line"),
+        ("A\x01B\x00C", "A\x01BC"),
+        ("\x00\x00", ""),
+    ],
+)
+def test_page_text_normalization_removes_only_nul(raw: str, expected: str):
+    assert normalize_page_text(raw) == expected
+
+
+def test_ingestion_normalizes_extracted_nul_before_chunking_and_embedding(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+):
+    user = User(email="nul-pipeline@example.com", username="NUL", password_hash="hash")
+    course = Course(user=user, name="NUL regression")
+    document = add_document(
+        db,
+        course=course,
+        filename="nul.pdf",
+        content_hash="f" * 64,
+        status=DocumentStatus.PROCESSING,
+        content=make_pdf(["First page", "Second page"]),
+    )
+    db.commit()
+
+    extracted = iter(["辽宁省博物馆\x00赓续家国情怀", "Normal text\nSecond line"])
+    monkeypatch.setattr(PageObject, "extract_text", lambda _page: next(extracted))
+    expected = ["辽宁省博物馆赓续家国情怀", "Normal text\nSecond line"]
+    real_build_chunk_drafts = ingestion.build_chunk_drafts
+    embedded: list[str] = []
+
+    def checked_build(pages, **kwargs):
+        assert [page.text for page in pages] == expected
+        assert [page.page_number for page in pages] == [1, 2]
+        return real_build_chunk_drafts(pages, **kwargs)
+
+    def fake_embed(texts: list[str]) -> list[list[float]]:
+        assert all("\x00" not in value for value in texts)
+        embedded.extend(texts)
+        return [[1.0] + [0.0] * 1023 for _ in texts]
+
+    monkeypatch.setattr(ingestion, "build_chunk_drafts", checked_build)
+    monkeypatch.setattr(ingestion, "embed_texts", fake_embed)
+    process_document(document.id)
+
+    db.expire_all()
+    saved = db.get(Document, document.id)
+    chunks = list(db.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.document_id == document.id)
+        .order_by(DocumentChunk.chunk_index)
+    ))
+    assert saved is not None and saved.status == DocumentStatus.READY
+    assert saved.failure_reason is None
+    assert embedded == expected
+    assert [chunk.content for chunk in chunks] == expected
+    assert [chunk.page_number for chunk in chunks] == [1, 2]
+    assert all("\x00" not in chunk.content for chunk in chunks)
 
 
 def test_user_filename_never_controls_storage_path():

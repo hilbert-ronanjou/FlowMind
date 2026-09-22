@@ -148,6 +148,8 @@ def stored_pdf_exists(storage_path: str) -> bool:
 
 
 def normalize_page_text(text: str) -> str:
+    # PDF extraction may emit NUL, which PostgreSQL text columns cannot store.
+    text = text.replace("\x00", "")
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
     lines = [re.sub(r"[ \f\v]+", " ", line).strip() for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()

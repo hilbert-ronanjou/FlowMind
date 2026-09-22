@@ -1,14 +1,17 @@
 import os
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
+from pypdf import PageObject, PdfWriter
+from sqlalchemy import create_engine, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.course import Course
 from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
+from app.services.knowledge import ingestion
 from app.services.knowledge.retrieval import (
     search_ready_chunk_candidates,
     search_ready_chunks,
@@ -25,6 +28,69 @@ def unit_vector(index: int) -> list[float]:
     vector = [0.0] * 1024
     vector[index] = 1.0
     return vector
+
+
+def test_ingestion_persists_nul_free_chunks_in_postgres(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    engine = create_engine(POSTGRES_URL, pool_pre_ping=True)
+    # Exercise real inserts and the ingestion commit without retaining test rows.
+    with engine.connect() as connection, connection.begin() as transaction:
+        sessions = sessionmaker(
+            bind=connection, expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
+        try:
+            token = uuid4().hex
+            path = tmp_path / f"{token}.pdf"
+            writer = PdfWriter()
+            writer.add_blank_page(width=612, height=792)
+            with path.open("wb") as output:
+                writer.write(output)
+            with sessions() as db:
+                user = User(
+                    email=f"nul-{token}@example.invalid", username="NUL regression",
+                    password_hash="test-hash",
+                )
+                document = Document(
+                    course=Course(user=user, name=f"NUL {token}"),
+                    filename="nul.pdf", storage_path=path.name,
+                    content_hash=token * 2, file_size=path.stat().st_size,
+                    status=DocumentStatus.PROCESSING,
+                )
+                db.add(document)
+                db.commit()
+                document_id = document.id
+
+            expected = "辽宁省博物馆赓续家国情怀"
+
+            def fake_embed(texts: list[str]) -> list[list[float]]:
+                assert texts == [expected]
+                return [unit_vector(0)]
+
+            monkeypatch.setattr(ingestion, "SessionLocal", sessions)
+            monkeypatch.setattr(ingestion, "resolve_storage_path", lambda _key: path)
+            monkeypatch.setattr(
+                PageObject, "extract_text", lambda _page: "辽宁省博物馆\x00赓续家国情怀"
+            )
+            monkeypatch.setattr(ingestion, "embed_texts", fake_embed)
+            ingestion.process_document(document_id)
+
+            with sessions() as db:
+                saved = db.get(Document, document_id)
+                chunks = list(db.scalars(
+                    select(DocumentChunk).where(DocumentChunk.document_id == document_id)
+                ))
+                assert saved is not None and saved.status == DocumentStatus.READY
+                assert saved.failure_reason is None
+                assert len(chunks) == 1
+                assert chunks[0].content == expected
+                assert "\x00" not in chunks[0].content
+                assert chunks[0].page_number == 1
+                assert len(chunks[0].embedding) == 1024
+        finally:
+            transaction.rollback()
+    engine.dispose()
 
 
 def test_vector_retrieval_orders_results_and_enforces_scope():
