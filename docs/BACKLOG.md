@@ -10,9 +10,10 @@ This file records ideas that are outside the active Sprint scope. Items here are
 
 ## Deferred platform work
 
-- Production deployment and managed cloud services
+- Complete production ingress/deployment, CI/CD, and managed cloud services beyond the M1-A container foundation
 - Object storage for future course materials
 - Production observability and operational runbooks
+- Document and Course deletion currently removes the local PDF before the database delete commit. A database commit failure can therefore leave a retained row whose file is missing. Keep this as a known limitation until a separately scoped consistency design; do not change the current upload, retry, download, delete, or stale-recovery behavior during M1-A.
 
 ## RAG quality observations
 

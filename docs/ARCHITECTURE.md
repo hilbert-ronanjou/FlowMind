@@ -1,6 +1,6 @@
 # Architecture
 
-## Current architecture: Sprint 2 / M5 RAG Evaluation and Final Acceptance
+## Current architecture: Sprint 3 / M1-A Production Container Foundation
 
 ```text
 Browser
@@ -118,7 +118,13 @@ The existing Course Detail page owns the M4 interface; there is no global Knowle
 
 ## Runtime and verification
 
-Docker Compose defines a local PostgreSQL 16 service with a persistent named volume. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by `FRONTEND_URL`, and its API address by `NEXT_PUBLIC_API_URL`.
+Backend and Frontend use independent Docker build contexts. The Backend image runs FastAPI as a non-root user on port 8000, contains the application and Alembic tooling but never runs migrations automatically, and reserves `/var/lib/flowmind/documents` for a runtime volume. The Frontend image uses Next.js standalone output, runs as the image's non-root `node` user on port 3000, and compiles the same-origin `/api/v1` browser API base during the build.
+
+Docker Compose defines a local PostgreSQL 16 service using the pgvector project's versioned PostgreSQL 16 image and a persistent named database volume. `CREATE EXTENSION vector` remains in the existing Alembic migration. An existing local PostgreSQL instance can also be selected through `DATABASE_URL`. The frontend origin is configured by the Backend runtime `FRONTEND_URL`; the production browser API address is the non-secret Frontend build-time `NEXT_PUBLIC_API_URL=/api/v1`.
+
+`GET /health/live` checks only that the FastAPI process can answer. `GET /health/ready` checks a basic PostgreSQL query and a temporary read/write probe beneath the configured Document Storage root. Readiness never calls Qwen or the Embedding provider and does not repeat Alembic or pgvector deployment gates. The legacy `GET /health` remains for compatibility.
+
+M1-A does not yet provide Nginx, HTTPS, a complete production Compose topology, or CI. Those are separate deployment concerns and no Backend, Frontend, or database port is declared public by this architecture document.
 
 Backend unit tests use an isolated in-memory SQLite database. A separately enabled PostgreSQL integration test validates pgvector ordering, citation metadata inputs, and ownership/Course/status filters without a provider call. File endpoint tests cover owner access, cross-user denial, missing files, path safety, PDF headers, and storage-path non-disclosure. The explicit browser acceptance uses real PostgreSQL, embedding, and Qwen through the Course UI and removes its dedicated rows and local file. Ordinary pytest does not call Model Studio.
 

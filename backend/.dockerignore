@@ -1,0 +1,31 @@
+# Keep the backend build context intentionally small and secret-free.
+**
+!app
+!app/**
+!alembic
+!alembic/**
+!alembic.ini
+!requirements.txt
+!constraints.txt
+!Dockerfile
+!.dockerignore
+
+# These exclusions must follow the directory allowlist.
+**/.env
+**/.env.*
+**/.venv
+**/node_modules
+**/.next
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.coverage*
+**/htmlcov
+**/test-results
+**/playwright-report
+**/storage
+**/.git
+**/secrets
+**/*.pem
+**/*.key
+**/*.pdf

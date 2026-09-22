@@ -126,7 +126,7 @@ The completed M4 capability includes:
 
 M4 added no database table, persistent chat, multi-turn context, new retrieval behavior, new AI model configuration, or global Knowledge Base product.
 
-## Current Sprint scope: Sprint 2 / M5 RAG Evaluation and Final Acceptance
+### Sprint 2 / M5: RAG Evaluation and Final Acceptance
 
 M5 is limited to establishing a fixed, repeatable evaluation baseline for the completed Course-scoped RAG pipeline and completing Sprint 2 regression, security, persistence, browser, and documentation acceptance. It adds no product capability.
 
@@ -148,9 +148,27 @@ Sprint 2 / M5 is completed. The fixed 25-case baseline executed 24 real grounded
 
 Full backend pytest, the opt-in real PostgreSQL vector test, frontend lint/typecheck/production build, Alembic current/check, database/storage cleanup, security scans, and the real browser registration/login/upload/query/Citation/refusal/refresh flow passed. No database table, business API, business page, model setting, or retrieval behavior was added.
 
+## Current Sprint scope: Sprint 3 / M1-A Production Container Foundation
+
+M1-A is limited to establishing a secure, repeatable production-container foundation without changing business behavior. The authorized work is:
+
+- independent `backend/` and `frontend/` Docker build contexts with context-specific secret exclusions;
+- a production FastAPI image with a fixed Python version, constrained dependencies, a non-root runtime user, and no automatic migration;
+- a production Next.js standalone image with a fixed Node and pnpm version and the same-origin `/api/v1` browser API base compiled at build time;
+- a PostgreSQL 16 image that explicitly includes a fixed pgvector server extension version;
+- the fixed production Document Storage contract `/var/lib/flowmind/documents`, supplied by a runtime volume while database `storage_path` values remain relative keys;
+- process-only liveness and PostgreSQL-plus-Document-Storage readiness endpoints;
+- explicit local and production environment-variable examples containing no real secrets.
+
+M1-A does not authorize Nginx, HTTPS, a complete production Compose stack, GitHub Actions, ECS, SLS, Prometheus, Grafana, Redis, Celery, Kubernetes, microservices, schema changes, or any RAG / AI behavior change. Alembic migrations remain an explicit deployment gate and are never run from an application Dockerfile or automatically by every Backend replica.
+
 ## Features still prohibited in the current Sprint
 
-The following remain prohibited during Sprint 2 / M5 even when they are mentioned elsewhere in the V1.0 product scope:
+The following remain prohibited during Sprint 3 / M1-A even when they are mentioned elsewhere in the V1.0 product scope:
+
+- Nginx, HTTPS, or a complete production Compose deployment
+- GitHub Actions or other CI/CD implementation
+- Prometheus, Grafana, or SLS observability implementation
 
 - OCR or scanned-PDF recognition
 - DOCX, PPTX, image, web-page, or other non-PDF ingestion
@@ -194,7 +212,7 @@ The following remain prohibited during Sprint 2 / M5 even when they are mentione
 
 ## Data constraints
 
-The business tables authorized through Sprint 2 / M5 are exactly:
+The business tables authorized through Sprint 3 / M1-A are exactly:
 
 - `users`
 - `courses`
@@ -202,7 +220,7 @@ The business tables authorized through Sprint 2 / M5 are exactly:
 - `documents`
 - `document_chunks`
 
-The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M5 table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
+The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M1-A table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
 
 ## Change control
 

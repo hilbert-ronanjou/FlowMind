@@ -16,7 +16,7 @@ The V1.0 product boundary and current sprint restrictions remain defined in [`do
 - Authentication: hashed passwords and JWT bearer tokens
 - AI extraction: Alibaba Cloud Model Studio / Qwen structured output, validated with Pydantic
 - Course knowledge: text-extractable PDF ingestion, 1024-dimensional Model Studio embeddings, PostgreSQL pgvector retrieval, and grounded Qwen answers
-- Local infrastructure: Docker Compose for PostgreSQL only
+- Container foundation: independent Backend and Frontend production images plus Docker Compose PostgreSQL 16 with pgvector
 
 ## Project structure
 
@@ -68,7 +68,7 @@ Keep the API key on the backend; never use a `NEXT_PUBLIC_` variable for it. The
 docker compose up -d postgres
 ```
 
-The Compose database listens on `localhost:5432` with credentials supplied through `.env` and persists data in a named volume. If using an existing PostgreSQL service, set `DATABASE_URL` to that instance instead. Runtime and acceptance testing require PostgreSQL.
+The Compose database uses the versioned `pgvector/pgvector:0.8.6-pg16-bookworm` image pinned to its multi-platform index digest, listens on `localhost:5432` with credentials supplied through `.env`, and persists data in a named volume. The image explicitly contains the pgvector server extension required by the existing Alembic migration. If using an existing PostgreSQL service, set `DATABASE_URL` to that instance instead. Runtime and acceptance testing require PostgreSQL.
 
 ### 2. Start the backend
 
@@ -95,6 +95,29 @@ pnpm dev
 ```
 
 Open `http://localhost:3000`. The browser origin must match the backend's `FRONTEND_URL`; `localhost` and `127.0.0.1` are different origins. Set `NEXT_PUBLIC_API_URL` in the frontend process environment (or its local environment file) before development or production build if the API address differs. Next.js does not automatically read the repository-root `.env` from the `frontend` directory.
+
+## Production container foundation
+
+Backend and Frontend deliberately use separate build contexts so the repository-root `.env` and unrelated files cannot enter either context:
+
+```powershell
+docker build -f backend/Dockerfile -t flowmind-backend:m1-a backend
+docker build --build-arg NEXT_PUBLIC_API_URL=/api/v1 -f frontend/Dockerfile -t flowmind-frontend:m1-a frontend
+```
+
+The Backend image uses Python 3.12.14, installs the declared requirements under `backend/constraints.txt`, runs as UID/GID 10001, and starts `uvicorn app.main:app --host 0.0.0.0 --port 8000` without `--reload`. It does not run Alembic automatically. Deployment must run `alembic upgrade head` exactly once as a separate gate before starting application replicas.
+
+Production must supply `DOCUMENT_STORAGE_ROOT=/var/lib/flowmind/documents` and mount a persistent, writable volume there. A named volume inherits the image directory ownership; a host bind mount must be writable by UID/GID 10001. PDF files are never part of the image. The database continues to store only generated relative storage keys.
+
+The Frontend image uses Node 24.19.0, pnpm 11.25.0, the frozen pnpm lockfile, and Next.js standalone output. `NEXT_PUBLIC_API_URL` is public build-time configuration and the Docker build enforces the same-origin value `/api/v1`; it must never contain a secret or an internal Docker service name. Routing `/api/v1` to the Backend is intentionally deferred to the later Nginx/production-topology milestone.
+
+Environment contracts are documented in `.env.example` for local development and `.env.production.example` for production. Values such as `DATABASE_URL`, `JWT_SECRET`, Model Studio credentials, `FRONTEND_URL`, and Document settings are Backend runtime configuration. No real secret belongs in either example or any image layer.
+
+Health endpoints:
+
+- `GET /health` remains the compatibility probe.
+- `GET /health/live` checks only the FastAPI process.
+- `GET /health/ready` checks `SELECT 1` against PostgreSQL and performs a temporary read/write probe in Document Storage. It does not call Qwen or Embedding and does not run migrations or extension checks.
 
 ## Implemented features
 
