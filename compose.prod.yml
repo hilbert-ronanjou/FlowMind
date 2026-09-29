@@ -84,6 +84,7 @@ services:
       - "${HTTP_BIND_ADDRESS:-127.0.0.1}:${HTTP_PORT:-8080}:80"
     volumes:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_webroot:/var/www/certbot:ro
     networks: [app]
     depends_on:
       backend:
@@ -97,6 +98,15 @@ services:
       retries: 3
       start_period: 10s
 
+  certbot:
+    image: certbot/certbot:v5.8.0
+    profiles: [acme]
+    restart: "no"
+    volumes:
+      - certbot_webroot:/var/www/certbot
+      - letsencrypt_data:/etc/letsencrypt
+    networks: [app]
+
 networks:
   # A single private bridge; not internal:true because Model Studio needs egress.
   app:
@@ -105,6 +115,8 @@ networks:
 volumes:
   postgres_data:
   documents:
+  certbot_webroot:
+  letsencrypt_data:
 
 secrets:
   backend_env:

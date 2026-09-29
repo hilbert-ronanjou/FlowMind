@@ -1,6 +1,6 @@
-# Production delivery baseline (Sprint 3 / M1-B)
+# Production delivery and ACME bootstrap (Sprint 3 / M2-C2-A)
 
-This is a single-host, single-Backend-worker HTTP baseline, not an Internet-ready HTTPS deployment. M1-A images and all business behavior remain unchanged. HTTPS/domain configuration is M2; no cloud deployment, CD, or automated backup is included.
+This is a single-host, single-Backend-worker HTTP deployment with an ACME HTTP-01 bootstrap for `flowmind.hilbertspace.cloud`. Nginx remains the only public entry. TLS and HTTP-to-HTTPS redirects are deliberately not enabled until a trusted certificate exists; no business behavior, CD, or automated backup is included.
 
 ## Prerequisites and configuration
 
@@ -16,7 +16,7 @@ This is a single-host, single-Backend-worker HTTP baseline, not an Internet-read
 - `BACKEND_ENV_FILE` selects the runtime configuration file; default `./.env.production`. If using another `--env-file`, explicitly set this path as well. The file is mounted read-only at `/app/.env` for Backend and migration, using their existing settings loader. It is **not** a Docker build input or container Config.Env secret. PostgreSQL reads its separate password file through `POSTGRES_PASSWORD_FILE`.
 - `NEXT_PUBLIC_API_URL=/api/v1` is public build-time configuration, fixed in the production build. Frontend and Nginx receive no Backend secret file. Compose secrets on a local host are file mounts, not an encrypted secret vault; Docker administrators can still access them. On Linux ensure mounted Backend files are readable by UID 10001 (for example owner UID 10001 and mode 0400), while host-directory permissions prevent other host users from accessing them.
 
-`HTTP_BIND_ADDRESS=127.0.0.1` is intentionally safe by default. `HTTP_PORT=8080` is configurable. Only Nginx publishes a port; Frontend 3000, Backend 8000, and PostgreSQL 5432 remain within the Docker bridge. An explicitly reviewed non-loopback bind can expose HTTP, but credentials and PDFs would then travel without TLS; do not use real users over an untrusted network before M2.
+`HTTP_BIND_ADDRESS=127.0.0.1` is intentionally safe by default. `HTTP_PORT=8080` is configurable. For public ACME validation on the ECS host, set `HTTP_BIND_ADDRESS=0.0.0.0` and `HTTP_PORT=80`, and allow inbound TCP port 80 in the host firewall and security group. Only Nginx publishes a port; Frontend 3000, Backend 8000, and PostgreSQL 5432 remain within the Docker bridge. HTTP credentials and PDFs are not protected in transit; do not use real users over an untrusted network before TLS is enabled in the next reviewed stage.
 
 ## Build and fresh startup
 
@@ -59,7 +59,7 @@ Do not resume service after a migration failure until the cause is corrected and
 
 ## Routing, health, and logs
 
-Nginx preserves `/api/v1` paths and proxies them to Backend; other requests go to Frontend. It forwards Host (including the external port), client address, and HTTP scheme. As the sole edge, it replaces untrusted incoming forwarded-address values. Docker DNS is resolved dynamically to survive application-container recreation. The 21 MiB request ceiling allows a 20 MiB PDF plus multipart overhead; FastAPI remains responsible for the 20 MiB file limit. API read timeout is 180 seconds; the proxy does not retry failed write requests across application instances.
+Nginx serves `/.well-known/acme-challenge/` directly from the dedicated Certbot webroot. Those requests never reach Frontend or Backend. Nginx preserves `/api/v1` paths and proxies them to Backend; every other request goes to Frontend. It forwards Host (including the external port), client address, and HTTP scheme. As the sole edge, it replaces untrusted incoming forwarded-address values. Docker DNS is resolved dynamically to survive application-container recreation. The 21 MiB request ceiling allows a 20 MiB PDF plus multipart overhead; FastAPI remains responsible for the 20 MiB file limit. API read timeout is 180 seconds; the proxy does not retry failed write requests across application instances.
 
 ```sh
 curl -f http://localhost:8080/
@@ -71,6 +71,18 @@ docker compose --env-file .env.production -p flowmind-prod -f compose.prod.yml l
 Unauthenticated `/api/v1/auth/me` should return 401 (Backend routing works). Backend health endpoints remain internal: `/health/live` checks only the process, `/health/ready` checks PostgreSQL and Document Storage. No provider or full migration/extension polling is included. Frontend health checks HTTP `/`; Nginx health checks the proxied homepage. Database unavailability marks Backend unhealthy and restores readiness when the database returns; Docker health status alone does not restart an unhealthy process.
 
 Never log request bodies, JWTs, passwords, or API keys. Nginx access logs omit headers, bodies, and query strings. Review diagnostic logs before sharing them; Docker-administrator access remains privileged.
+
+## ACME HTTP-01 certificate issuance
+
+The `certbot` service is an on-demand tool under the `acme` Compose profile. A normal `docker compose ... up -d` excludes it. Nginx and Certbot share only the `certbot_webroot` named volume for challenge files; Nginx mounts it read-only. Certbot stores certificates, keys, renewal configuration, and ACME account data in the separate `letsencrypt_data` named volume. PostgreSQL and uploaded-document volumes are independent.
+
+Before issuance, confirm the DNS A record resolves to this ECS public IPv4 and that `http://flowmind.hilbertspace.cloud/.well-known/acme-challenge/` reaches this Nginx instance on port 80. With the production HTTP stack already running, issue the certificate manually using a real operator email substituted locally for the placeholder:
+
+```sh
+docker compose --profile acme --env-file .env.production -p flowmind-prod -f compose.prod.yml run --rm certbot certonly --webroot --webroot-path /var/www/certbot --email replace-with-your-email@example.com --agree-tos --no-eff-email --non-interactive -d flowmind.hilbertspace.cloud
+```
+
+This command is documented for the production host but is not run as part of this bootstrap change. It does not enable TLS by itself. Do not commit the operator email, certificate private keys, ACME account data, or a rendered copy of either named volume. TLS mounting, port 443, renewal operations, and the HTTP-to-HTTPS redirect require the next reviewed stage.
 
 ## Restart, persistence, and shutdown
 
