@@ -99,7 +99,7 @@ def delete_course(
         db.commit()
     except Exception:
         db.rollback()
-        logger.exception("Could not delete course %s and its local documents", course_id)
+        logger.error("Course deletion failed", extra={"event": "course_delete_failed"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="The course could not be deleted.",

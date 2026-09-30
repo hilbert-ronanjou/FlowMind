@@ -142,3 +142,18 @@ def test_no_certificate_or_private_key_material_is_tracked():
         assert not re.search(
             r"-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----", content
         )
+
+
+def test_nginx_correlates_structured_logs_and_keeps_metrics_private():
+    for path in (NGINX_PATH, HTTPS_NGINX_PATH):
+        config = path.read_text(encoding="utf-8")
+        assert "log_format flowmind escape=json" in config
+        assert '"request_id":"$request_id"' in config
+        assert '"path":"$log_path"' in config
+        assert "$request_uri" not in config.split("log_format flowmind", 1)[1].split(";", 1)[0]
+        assert "proxy_set_header X-Request-ID $request_id;" in config
+        assert "add_header X-Request-ID $request_id always;" in config
+        assert "proxy_hide_header X-Request-ID;" in config
+        for forbidden in ("$http_authorization", "$request_body"):
+            assert forbidden not in config
+        assert "return 404;" in _nginx_location(config, "= /metrics")

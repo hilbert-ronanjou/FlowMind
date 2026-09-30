@@ -193,7 +193,7 @@ async def upload_document(
     except Exception:
         db.rollback()
         remove_stored_pdf(stored.storage_path)
-        logger.exception("Could not create uploaded document")
+        logger.error("Document upload failed", extra={"event": "document_upload_failed"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail(
@@ -237,7 +237,7 @@ def get_document_file(
     try:
         stored_file = resolve_storage_path(document.storage_path)
     except DocumentProcessingError:
-        logger.warning("Rejected unsafe storage path for document_id=%s", document_id)
+        logger.warning("Unsafe document storage path rejected", extra={"event": "document_storage_path_rejected"})
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_detail(
@@ -282,7 +282,7 @@ def delete_document(
         db.commit()
     except Exception:
         db.rollback()
-        logger.exception("Could not delete document %s", document_id)
+        logger.error("Document deletion failed", extra={"event": "document_delete_failed"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail("storage_error", "The document could not be deleted."),
@@ -341,7 +341,7 @@ def retry_document(
         db.refresh(document)
     except Exception:
         db.rollback()
-        logger.exception("Could not retry document %s", document_id)
+        logger.error("Document retry failed", extra={"event": "document_retry_failed"})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail("retry_failed", "The document could not be retried."),

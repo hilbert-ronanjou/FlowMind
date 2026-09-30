@@ -1,4 +1,5 @@
 import logging
+from time import perf_counter
 
 from fastapi import APIRouter, HTTPException, status
 from openai import (
@@ -15,6 +16,7 @@ from sqlalchemy import func, select
 from app.api.deps import CurrentUser, DbSession
 from app.api.routes.courses import owned_course_or_404
 from app.core.config import get_settings
+from app.core.observability import record_rag
 from app.models.course import Course
 from app.models.document import Document, DocumentStatus
 from app.schemas.knowledge import (
@@ -49,6 +51,29 @@ router = APIRouter()
     response_model=KnowledgeQueryResponse,
 )
 def query_course_knowledge(
+    course_id: int,
+    payload: KnowledgeQueryRequest,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> KnowledgeQueryResponse:
+    started = perf_counter()
+    outcome = "failure"
+    try:
+        result = _execute_query_course_knowledge(course_id, payload, db, current_user)
+        outcome = "answerable" if result.answerable else "unanswerable"
+        return result
+    finally:
+        record_rag(outcome, perf_counter() - started)
+        logger.info(
+            "Knowledge query finished",
+            extra={
+                "event": "rag_query_completed" if outcome != "failure" else "rag_query_failed",
+                "outcome": outcome,
+            },
+        )
+
+
+def _execute_query_course_knowledge(
     course_id: int,
     payload: KnowledgeQueryRequest,
     db: DbSession,
@@ -92,24 +117,11 @@ def query_course_knowledge(
         query_embedding=query_embedding,
         limit=settings.knowledge_top_k,
     )[: settings.knowledge_top_k]
-    logger.info(
-        "Knowledge retrieval course_id=%s count=%s chunk_ids=%s",
-        course_id,
-        len(candidates),
-        [candidate.chunk_id for candidate in candidates],
-    )
     if not candidates:
         return no_answer_response()
 
     try:
         generation = generate_grounded_answer(payload.question, candidates)
-        logger.info(
-            "Grounded answer course_id=%s retrieval_count=%s latency_ms=%.1f total_tokens=%s",
-            course_id,
-            len(candidates),
-            generation.latency_ms,
-            generation.usage.total_tokens,
-        )
         return build_grounded_response(generation.answer, candidates)
     except (KnowledgeConfigurationError, RateLimitError) as error:
         raise HTTPException(

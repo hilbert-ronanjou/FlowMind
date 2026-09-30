@@ -164,7 +164,7 @@ M1-A does not authorize Nginx, HTTPS, a complete production Compose stack, GitHu
 
 M1-A passed real Docker runtime acceptance and Owner Review. Its preceding restrictions describe that completed stage, not the newly authorized M1-B work.
 
-## Current Sprint scope: Sprint 3 / M1-B Production Compose & Delivery Baseline
+## Completed stage: Sprint 3 / M1-B Production Compose & Delivery Baseline
 
 M1-B reuses the approved M1-A images without changing business behavior. Authorized work is limited to:
 
@@ -175,11 +175,15 @@ M1-B reuses the approved M1-A images without changing business behavior. Authori
 - minimal GitHub Actions regression, pgvector integration, and image-build CI without paid provider calls or deployment;
 - a deployment runbook and isolated fresh-volume same-origin, persistence, failure, and security acceptance.
 
-No database schema, business API, UI, RAG prompt, Top-K, chunking, embedding model, retrieval algorithm, or AI Import behavior change is authorized. HTTPS and domain work belong to M2. No commit or tag is authorized before Owner Review.
+M1-B added no database schema, business API, UI, RAG prompt, Top-K, chunking, embedding model, retrieval algorithm, or AI Import behavior change. Its HTTPS and domain restriction applied to that completed stage.
 
-## Features still prohibited in the current Sprint
+## Current Sprint scope: Sprint 3 / M3-A Application Observability Foundation
 
-The following remain prohibited during Sprint 3 / M1-B even when they are mentioned elsewhere in the V1.0 product scope:
+M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A authorizes only request IDs across Nginx and FastAPI, safe structured application/Nginx logs, an internal Prometheus-compatible `/metrics` endpoint, and bounded HTTP, provider, RAG, and document-processing measurements with focused tests and deployment documentation. SLS, Prometheus/Grafana deployment, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
+
+## Features prohibited during the completed M1-B stage
+
+The following restrictions applied during Sprint 3 / M1-B even when features were mentioned elsewhere in the V1.0 product scope. The current M3-A boundary is stated above.
 
 - HTTPS, domain configuration, or cloud deployment
 - CD or automatic deployment (minimal regression CI is authorized)
@@ -228,7 +232,7 @@ The following remain prohibited during Sprint 3 / M1-B even when they are mentio
 
 ## Data constraints
 
-The business tables authorized through Sprint 3 / M1-B are exactly:
+The business tables authorized through Sprint 3 / M3-A are exactly:
 
 - `users`
 - `courses`

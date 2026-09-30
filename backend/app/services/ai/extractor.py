@@ -3,6 +3,7 @@ from datetime import date
 from openai import OpenAI
 
 from app.core.config import get_settings
+from app.core.observability import observe_ai_call
 from app.services.ai.prompts import build_system_prompt
 from app.services.ai.schemas import ExtractionResult
 
@@ -21,13 +22,16 @@ def extract_with_client(
     current_date: date,
     text: str,
 ) -> ExtractionResult:
-    completion = client.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": build_system_prompt(current_date)},
-            {"role": "user", "content": text},
-        ],
-        response_format=ExtractionResult,
+    completion = observe_ai_call(
+        "structured_extraction",
+        lambda: client.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": build_system_prompt(current_date)},
+                {"role": "user", "content": text},
+            ],
+            response_format=ExtractionResult,
+        ),
     )
     if not completion.choices:
         raise StructuredOutputError("The model returned no choices")

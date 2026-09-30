@@ -4,6 +4,7 @@ from time import perf_counter
 from openai import OpenAI
 
 from app.core.config import get_settings
+from app.core.observability import observe_ai_call, record_ai_tokens
 from app.services.knowledge.prompts import (
     build_grounded_system_prompt,
     build_grounded_user_prompt,
@@ -50,16 +51,19 @@ def grounded_answer_with_client(
     candidates: list[RetrievedChunk],
 ) -> GroundedGeneration:
     started = perf_counter()
-    completion = client.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": build_grounded_system_prompt()},
-            {
-                "role": "user",
-                "content": build_grounded_user_prompt(question, candidates),
-            },
-        ],
-        response_format=GroundedAnswer,
+    completion = observe_ai_call(
+        "grounded_answer",
+        lambda: client.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": build_grounded_system_prompt()},
+                {
+                    "role": "user",
+                    "content": build_grounded_user_prompt(question, candidates),
+                },
+            ],
+            response_format=GroundedAnswer,
+        ),
     )
     latency_ms = (perf_counter() - started) * 1000
     if not completion.choices:
@@ -69,9 +73,11 @@ def grounded_answer_with_client(
         raise GroundedStructuredOutputError("The model refused the grounded query")
     if message.parsed is None:
         raise GroundedStructuredOutputError("The model returned no structured result")
+    usage = _provider_usage(completion)
+    record_ai_tokens("grounded_answer", usage.prompt_tokens, usage.completion_tokens)
     return GroundedGeneration(
         answer=GroundedAnswer.model_validate(message.parsed),
-        usage=_provider_usage(completion),
+        usage=usage,
         latency_ms=latency_ms,
     )
 

@@ -2,6 +2,7 @@ import hashlib
 import logging
 import math
 import re
+from time import perf_counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,6 +14,7 @@ from pypdf.errors import PdfReadError
 from sqlalchemy import delete, select
 
 from app.core.config import get_settings
+from app.core.observability import record_document
 from app.database import SessionLocal
 from app.models.document import (
     EMBEDDING_DIMENSIONS,
@@ -307,7 +309,7 @@ def _mark_document_failed(document_id: int, reason: str) -> None:
             db.commit()
         except Exception:
             db.rollback()
-            logger.exception("Could not mark document %s as failed", document_id)
+            logger.error("Document failure state could not be saved", extra={"event": "document_failure_state_error"})
 
 
 def process_document(document_id: int) -> None:
@@ -317,6 +319,9 @@ def process_document(document_id: int) -> None:
             return
         storage_path = document.storage_path
 
+    started = perf_counter()
+    outcome = "failure"
+    logger.info("Document processing started", extra={"event": "document_processing_started"})
     try:
         path = resolve_storage_path(storage_path)
         if not path.is_file():
@@ -330,6 +335,7 @@ def process_document(document_id: int) -> None:
         )
         vectors = embed_chunk_drafts(chunks, batch_size=settings.embedding_batch_size)
         _persist_ready_document(document_id, chunks, vectors)
+        outcome = "success"
     except DocumentProcessingError as exc:
         _mark_document_failed(document_id, exc.safe_reason)
     except (
@@ -337,11 +343,20 @@ def process_document(document_id: int) -> None:
         EmbeddingProviderError,
         EmbeddingResponseError,
     ):
-        logger.exception("Embedding failed while processing document %s", document_id)
+        logger.error("Document embedding failed", extra={"event": "document_embedding_failed"})
         _mark_document_failed(document_id, EMBEDDING_FAILURE_REASON)
     except Exception:
-        logger.exception("Unexpected failure while processing document %s", document_id)
+        logger.error("Document processing failed", extra={"event": "document_processing_failed"})
         _mark_document_failed(document_id, GENERIC_FAILURE_REASON)
+    finally:
+        record_document(outcome, perf_counter() - started)
+        logger.info(
+            "Document processing finished",
+            extra={
+                "event": "document_processing_completed" if outcome == "success" else "document_processing_failed",
+                "outcome": outcome,
+            },
+        )
 
 
 def recover_stale_processing_documents(*, now: datetime | None = None) -> int:

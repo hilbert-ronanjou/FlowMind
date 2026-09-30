@@ -10,6 +10,7 @@ from openai import (
 )
 
 from app.core.config import get_settings
+from app.core.observability import observe_ai_call
 
 
 class EmbeddingConfigurationError(RuntimeError):
@@ -48,10 +49,13 @@ def embed_texts_with_client(
     texts: Sequence[str],
 ) -> list[list[float]]:
     normalized = _validated_texts(texts)
-    response = client.embeddings.create(
-        model=model,
-        input=normalized,
-        dimensions=dimensions,
+    response = observe_ai_call(
+        "embedding",
+        lambda: client.embeddings.create(
+            model=model,
+            input=normalized,
+            dimensions=dimensions,
+        ),
     )
     ordered = sorted(response.data, key=lambda item: item.index)
     if len(ordered) != len(normalized) or [item.index for item in ordered] != list(

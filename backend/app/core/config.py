@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(min_length=32)
     jwt_expire_minutes: int = Field(default=1440, gt=0)
     frontend_url: str = "http://localhost:3000"
+    app_environment: Literal["development", "production", "test"] = "development"
     dashscope_api_key: str | None = None
     dashscope_base_url: str | None = None
     qwen_model: str | None = None

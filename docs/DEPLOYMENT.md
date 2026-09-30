@@ -145,6 +145,14 @@ The first two commands are for the **same already-migrated release**, not substi
 - Provider failure: check server-side configuration and provider availability; never change the browser API base to a Docker hostname.
 - In-process ingestion is not a durable queue. Interrupted processing follows the existing stale-recovery/retry behavior. File deletion and database commit remain non-atomic. No backup automation, HA, zero-downtime migration, or automatic recovery system is claimed.
 
+## Application observability (Sprint 3 / M3-A)
+
+Nginx generates a new `X-Request-ID` for each incoming request, passes it to Backend, returns it to the client, and writes the same ID in its JSON access log. FastAPI generates a fallback ID for direct/internal calls. Backend JSON logs contain UTC `timestamp`, `level`, `service`, `environment`, `event`, and `request_id`; HTTP completion events also contain `method`, full route template, `status_code`, and `duration_ms`. `APP_ENVIRONMENT=production` in the production environment file supplies the environment field. Uvicorn's separate access log is disabled in the production image. Logs are event-oriented diagnostic evidence; neither tier logs request bodies, Authorization values, query strings, provider content, or exception text. Nginx records a bounded path category rather than the raw URL.
+
+Backend serves Prometheus text at `http://backend:8000/metrics` on the private Docker bridge. Both Nginx configurations return 404 for `/metrics`; Backend, Frontend, and PostgreSQL have no public ports. HTTP metrics use registered route templates (or `unmatched`), bounded methods, and status classes. Provider operation/outcome, RAG outcome, and document processing outcome use fixed values. Grounded Qwen token counters increase only when the provider reports usable token counts. Request, user, Course, and Document IDs are never metric labels. Metrics are aggregated time-series measurements held by the single Backend process; counters reset on restart. The endpoint does not call Qwen, Embedding, or PostgreSQL.
+
+The request ID is the correlation key between Nginx and Backend logs. SLS shipping and Prometheus/Grafana collection are separate later M3 stages; no collector or dashboard is deployed by this milestone.
+
 ## CI
 
 `.github/workflows/ci.yml` runs for PRs, pushes to main/master/codex branches, and manual dispatch. Backend installs constraints-locked test dependencies, upgrades an ephemeral PostgreSQL/pgvector database, and runs pytest including the vector integration test. Frontend runs frozen install, lint, typecheck, and build. A separate job builds both images from their own contexts. CI has read-only repository permission, no real provider credentials, no paid evaluation, no image push, and no deployment. A repository owner must configure the three CI jobs as required checks to enforce a merge gate; adding YAML alone cannot change branch protection.
