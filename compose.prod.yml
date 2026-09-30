@@ -96,7 +96,7 @@ services:
       frontend:
         condition: service_healthy
     healthcheck:
-      test: [CMD-SHELL, 'if [ "$${NGINX_CONFIG}" = "default.https.conf" ]; then wget --no-check-certificate --header="Host: flowmind.hilbertspace.cloud" -q -O /dev/null https://127.0.0.1/; else wget --header="Host: flowmind.hilbertspace.cloud" -q -O /dev/null http://127.0.0.1/; fi']
+      test: [CMD-SHELL, 'if [ "$${NGINX_CONFIG}" = "default.https.conf" ]; then wget --no-check-certificate --header="Host: flowmind.hilbertspace.cloud" --header="X-FlowMind-Healthcheck: nginx" -q -O /dev/null https://127.0.0.1/; else wget --header="Host: flowmind.hilbertspace.cloud" --header="X-FlowMind-Healthcheck: nginx" -q -O /dev/null http://127.0.0.1/; fi']
       interval: 10s
       timeout: 5s
       retries: 3

@@ -28,6 +28,7 @@ request_id_context: ContextVar[str | None] = ContextVar("request_id", default=No
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{16,64}\Z")
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 EVENT_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
+HEALTH_PATHS = frozenset({"/health", "/health/live", "/health/ready"})
 
 REGISTRY = CollectorRegistry()
 HTTP_REQUESTS = Counter(
@@ -236,6 +237,10 @@ def _route_template(request: Request) -> str:
     return "unmatched"
 
 
+def _is_health_request(path: str) -> bool:
+    return path in HEALTH_PATHS
+
+
 async def observe_request(request: Request, call_next) -> Response:
     supplied_id = request.headers.get("x-request-id", "")
     request_id = supplied_id if REQUEST_ID_PATTERN.fullmatch(supplied_id) else uuid4().hex
@@ -255,9 +260,9 @@ async def observe_request(request: Request, call_next) -> Response:
         response.headers["X-Request-ID"] = request_id
         return response
     finally:
-        template = _route_template(request)
-        seconds = perf_counter() - started
-        if request.url.path != "/metrics":
+        if request.url.path != "/metrics" and not _is_health_request(request.url.path):
+            template = _route_template(request)
+            seconds = perf_counter() - started
             record_http(request.method, template, status_code, seconds)
             logging.getLogger(__name__).info(
                 "HTTP request complete",

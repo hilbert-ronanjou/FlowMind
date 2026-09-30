@@ -157,3 +157,24 @@ def test_nginx_correlates_structured_logs_and_keeps_metrics_private():
         for forbidden in ("$http_authorization", "$request_body"):
             assert forbidden not in config
         assert "return 404;" in _nginx_location(config, "= /metrics")
+
+
+def test_only_nginx_loopback_self_probe_is_excluded_from_access_logs():
+    compose = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+    backend_probe = compose["services"]["backend"]["healthcheck"]["test"]
+    nginx_probe = compose["services"]["nginx"]["healthcheck"]["test"]
+    assert "/health/ready" in backend_probe[-1]
+    assert "127.0.0.1:8000" in backend_probe[-1]
+    assert nginx_probe[-1].count('--header="X-FlowMind-Healthcheck: nginx"') == 2
+    assert "http://127.0.0.1/" in nginx_probe[-1]
+    assert "https://127.0.0.1/" in nginx_probe[-1]
+
+    for path in (NGINX_PATH, HTTPS_NGINX_PATH):
+        config = path.read_text(encoding="utf-8")
+        assert 'map "$remote_addr:$http_x_flowmind_healthcheck" $log_general_request {' in config
+        assert "default 1;" in config
+        assert '"127.0.0.1:nginx" 0;' in config
+        assert "access_log off;" not in config
+        assert config.count("access_log /var/log/nginx/access.log flowmind if=$log_general_request;") == (
+            2 if path == HTTPS_NGINX_PATH else 1
+        )

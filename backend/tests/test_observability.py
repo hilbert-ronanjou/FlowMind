@@ -44,7 +44,7 @@ def test_concurrent_requests_keep_their_own_ids(client: TestClient):
     logger.addHandler(handler)
 
     def call(edge_id: str) -> str:
-        return client.get("/health/live", headers={"X-Request-ID": edge_id}).headers[
+        return client.get("/api/v1/courses", headers={"X-Request-ID": edge_id}).headers[
             "X-Request-ID"
         ]
 
@@ -135,20 +135,128 @@ def test_unhandled_failure_keeps_request_id_and_hides_details(
         raise RuntimeError("internal-private-diagnostic")
 
     monkeypatch.setattr("app.main.database_is_ready", fail)
-    with TestClient(app, raise_server_exceptions=False) as direct_client:
-        response = direct_client.get("/health/ready")
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(SafeJSONFormatter("test"))
+    logger = logging.getLogger("app.core.observability")
+    logger.addHandler(handler)
+    try:
+        with TestClient(app, raise_server_exceptions=False) as direct_client:
+            response = direct_client.get("/health/ready")
+    finally:
+        logger.removeHandler(handler)
     assert response.status_code == 500
     assert len(response.headers["X-Request-ID"]) == 32
     assert "internal-private-diagnostic" not in response.text
+    events = [json.loads(line) for line in output.getvalue().splitlines()]
+    assert any(event["event"] == "http_request_failed" for event in events)
+    assert not any(event["event"] == "http_request_completed" for event in events)
 
 
 def test_metrics_failure_cannot_break_normal_request(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(HTTP_REQUESTS, "labels", lambda *_: (_ for _ in ()).throw(RuntimeError("metrics unavailable")))
-    response = client.get("/health/live")
-    assert response.status_code == 200
-    assert response.json() == {"status": "live"}
+    response = client.get("/api/v1/courses")
+    assert response.status_code == 401
+
+
+def test_health_routes_exclude_generic_http_logs_and_metrics(client: TestClient):
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(SafeJSONFormatter("test"))
+    logger = logging.getLogger("app.core.observability")
+    logger.addHandler(handler)
+    paths = ("/health", "/health/live", "/health/ready")
+    before = {
+        path: (
+            sample("http_requests_total", {"method": "GET", "route": path, "status_class": "2xx"}),
+            sample("http_request_duration_seconds_count", {"method": "GET", "route": path}),
+        )
+        for path in paths
+    }
+    try:
+        responses = {path: client.get(path) for path in paths}
+    finally:
+        logger.removeHandler(handler)
+
+    assert responses["/health"].json() == {"status": "ok"}
+    assert responses["/health/live"].json() == {"status": "live"}
+    assert responses["/health/ready"].json() == {"status": "ready"}
+    assert all(response.status_code == 200 for response in responses.values())
+    for path in paths:
+        assert len(responses[path].headers["X-Request-ID"]) == 32
+        assert before[path] == (
+            sample("http_requests_total", {"method": "GET", "route": path, "status_class": "2xx"}),
+            sample("http_request_duration_seconds_count", {"method": "GET", "route": path}),
+        )
+    assert not any(
+        json.loads(line)["event"] == "http_request_completed"
+        for line in output.getvalue().splitlines()
+    )
+
+
+def test_failing_readiness_excludes_generic_http_noise(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("app.main.database_is_ready", lambda: False)
+    labels = {"method": "GET", "route": "/health/ready"}
+    before_requests = sample("http_requests_total", {**labels, "status_class": "5xx"})
+    before_duration = sample("http_request_duration_seconds_count", labels)
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(SafeJSONFormatter("test"))
+    logger = logging.getLogger("app.core.observability")
+    logger.addHandler(handler)
+    try:
+        response = client.get("/health/ready")
+    finally:
+        logger.removeHandler(handler)
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "not_ready"}
+    assert sample("http_requests_total", {**labels, "status_class": "5xx"}) == before_requests
+    assert sample("http_request_duration_seconds_count", labels) == before_duration
+    assert not any(
+        json.loads(line)["event"] == "http_request_completed"
+        for line in output.getvalue().splitlines()
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "route", "status_code"),
+    [
+        ("/api/v1/courses", "/api/v1/courses", 401),
+        ("/health/ready/extra", "unmatched", 404),
+    ],
+)
+def test_non_health_requests_remain_observable(
+    client: TestClient, path: str, route: str, status_code: int
+):
+    labels = {"method": "GET", "route": route}
+    counter_labels = {**labels, "status_class": "4xx"}
+    before_requests = sample("http_requests_total", counter_labels)
+    before_duration = sample("http_request_duration_seconds_count", labels)
+    output = io.StringIO()
+    handler = logging.StreamHandler(output)
+    handler.setFormatter(SafeJSONFormatter("test"))
+    logger = logging.getLogger("app.core.observability")
+    logger.addHandler(handler)
+    try:
+        response = client.get(path)
+    finally:
+        logger.removeHandler(handler)
+
+    assert response.status_code == status_code
+    assert sample("http_requests_total", counter_labels) == before_requests + 1
+    assert sample("http_request_duration_seconds_count", labels) == before_duration + 1
+    completed = [
+        json.loads(line) for line in output.getvalue().splitlines()
+        if json.loads(line)["event"] == "http_request_completed"
+    ]
+    assert len(completed) == 1
+    assert completed[0]["route"] == route
+    assert completed[0]["status_code"] == status_code
 
 
 def test_metrics_are_prometheus_text_with_normalized_labels(client: TestClient):
