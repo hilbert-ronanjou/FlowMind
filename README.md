@@ -4,7 +4,7 @@ FlowMind AI Cloud is a focused learning workspace for university students. It co
 
 ## Current stage
 
-Sprint 0, Sprint 1, Sprint 2, and Sprint 3 / M1-A are complete. M1-A passed Owner Review. The current authorized stage is **Sprint 3 / M1-B Production Compose & Delivery Baseline**: HTTP-only Nginx ingress, gated production Compose, minimal CI, and runtime acceptance without business changes.
+Sprint 0, Sprint 1, Sprint 2, and the Sprint 3 production application foundation are complete. The current authorized stage is **Sprint 3 / M3-C2 Private Application Monitoring**: optional self-hosted Prometheus/Grafana, existing application metrics, persistent monitoring volumes, and authenticated Grafana access through SSH.
 
 The V1.0 product boundary and current sprint restrictions remain defined in [`docs/SCOPE.md`](docs/SCOPE.md).
 
@@ -112,6 +112,8 @@ Production must supply `DOCUMENT_STORAGE_ROOT=/var/lib/flowmind/documents` and m
 The Frontend image uses Node 24.19.0, pnpm 11.25.0, the frozen pnpm lockfile, and Next.js standalone output. `NEXT_PUBLIC_API_URL` is public build-time configuration and the Docker build enforces the same-origin value `/api/v1`; it must never contain a secret or an internal Docker service name. M1-B routes `/api/v1` through Nginx to Backend using the separate `compose.prod.yml` stack.
 
 For production prerequisites, secret-file setup, fresh startup, migration gates, health, and safe shutdown, follow [the deployment runbook](docs/DEPLOYMENT.md). The development `docker-compose.yml` is unchanged by M1-B. **Never run `down -v` against data you need to retain.**
+
+Optional private Prometheus/Grafana monitoring uses `compose.monitoring.yml` with the `monitoring` profile. Follow [the monitoring runbook](docs/MONITORING.md) for credentials, validation, SSH-only Grafana access, and persistent volumes.
 
 Environment contracts are documented in `.env.example` for local development and `.env.production.example` for production. Values such as `DATABASE_URL`, `JWT_SECRET`, Model Studio credentials, `FRONTEND_URL`, and Document settings are Backend runtime configuration. No real secret belongs in either example or any image layer.
 

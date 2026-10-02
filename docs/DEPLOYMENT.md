@@ -151,7 +151,7 @@ Nginx generates a new `X-Request-ID` for each incoming request, passes it to Bac
 
 Backend serves Prometheus text at `http://backend:8000/metrics` on the private Docker bridge. Both Nginx configurations return 404 for `/metrics`; Backend, Frontend, and PostgreSQL have no public ports. HTTP metrics use registered route templates (or `unmatched`), bounded methods, and status classes. Provider operation/outcome, RAG outcome, and document processing outcome use fixed values. Grounded Qwen token counters increase only when the provider reports usable token counts. Request, user, Course, and Document IDs are never metric labels. Metrics are aggregated time-series measurements held by the single Backend process; counters reset on restart. The endpoint does not call Qwen, Embedding, or PostgreSQL.
 
-The request ID is the correlation key between Nginx and Backend logs. SLS shipping and Prometheus/Grafana collection are separate later M3 stages; no collector or dashboard is deployed by this milestone.
+The request ID is the correlation key between Nginx and Backend logs. The existing production SLS / LoongCollector integration is managed separately and is unchanged by monitoring configuration. For the optional private Prometheus/Grafana stack, credentials, SSH access, and persistent-volume operations, follow [the monitoring runbook](MONITORING.md).
 
 ## CI
 

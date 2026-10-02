@@ -177,9 +177,9 @@ M1-B reuses the approved M1-A images without changing business behavior. Authori
 
 M1-B added no database schema, business API, UI, RAG prompt, Top-K, chunking, embedding model, retrieval algorithm, or AI Import behavior change. Its HTTPS and domain restriction applied to that completed stage.
 
-## Current Sprint scope: Sprint 3 / M3-A Application Observability Foundation
+## Current Sprint scope: Sprint 3 / M3-C2 Private Application Monitoring
 
-M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A authorizes only request IDs across Nginx and FastAPI, safe structured application/Nginx logs, an internal Prometheus-compatible `/metrics` endpoint, and bounded HTTP, provider, RAG, and document-processing measurements with focused tests and deployment documentation. SLS, Prometheus/Grafana deployment, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
+M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A request IDs, safe structured logs, the private `/metrics` endpoint, and bounded application metrics remain the foundation. The existing M3-B SLS / LoongCollector integration remains unchanged. M3-C2 authorizes only an optional self-hosted Prometheus/Grafana Compose overlay, private Backend scraping, bounded retention/resource limits, separate persistent monitoring volumes, authenticated loopback-only Grafana access through SSH, one provisioned dashboard using existing metrics, tests, and operating documentation. Public monitoring access, managed monitoring, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
 
 ## Features prohibited during the completed M1-B stage
 

@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: flowmind-backend
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: [backend:8000]

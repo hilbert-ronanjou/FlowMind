@@ -1,0 +1,35 @@
+evaluation_interval: 30s
+tests:
+  - name: Empty metrics do not invent latency or provider usage
+    interval: 30s
+    promql_expr_test:
+      - expr: "sum(rate(http_requests_total{job=\"flowmind-backend\"}[2m])) or vector(0)"
+        eval_time: 2m
+        exp_samples: [{labels: "{}", value: 0}]
+      - expr: "100 * (sum(rate(http_requests_total{job=\"flowmind-backend\",status_class=\"5xx\"}[2m])) or vector(0)) / clamp_min((sum(rate(http_requests_total{job=\"flowmind-backend\"}[2m])) or vector(0)), 1e-9)"
+        eval_time: 2m
+        exp_samples: [{labels: "{}", value: 0}]
+      - expr: "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job=\"flowmind-backend\"}[2m])))"
+        eval_time: 2m
+        exp_samples: []
+      - expr: "sum by (operation, direction) (increase(ai_tokens_total{job=\"flowmind-backend\"}[6h]))"
+        eval_time: 2m
+        exp_samples: []
+  - name: Zero traffic has a finite zero error ratio
+    interval: 30s
+    input_series:
+      - series: 'http_requests_total{job="flowmind-backend",method="GET",route="/api/v1/courses",status_class="2xx"}'
+        values: "0 0 0 0 0"
+    promql_expr_test:
+      - expr: "100 * (sum(rate(http_requests_total{job=\"flowmind-backend\",status_class=\"5xx\"}[2m])) or vector(0)) / clamp_min((sum(rate(http_requests_total{job=\"flowmind-backend\"}[2m])) or vector(0)), 1e-9)"
+        eval_time: 2m
+        exp_samples: [{labels: "{}", value: 0}]
+  - name: A request counter reset retains a positive rate
+    interval: 30s
+    input_series:
+      - series: 'http_requests_total{job="flowmind-backend",method="GET",route="/api/v1/courses",status_class="2xx"}'
+        values: "0 3 6 0 3 6 9"
+    promql_expr_test:
+      - expr: "sum(rate(http_requests_total{job=\"flowmind-backend\"}[2m])) or vector(0)"
+        eval_time: 3m
+        exp_samples: [{labels: "{}", value: 0.075}]
