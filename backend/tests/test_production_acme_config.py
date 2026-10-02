@@ -148,6 +148,9 @@ def test_nginx_correlates_structured_logs_and_keeps_metrics_private():
     for path in (NGINX_PATH, HTTPS_NGINX_PATH):
         config = path.read_text(encoding="utf-8")
         assert "log_format flowmind escape=json" in config
+        log_format = config.split("log_format flowmind", 1)[1].split(";", 1)[0]
+        assert '"service":"flowmind-nginx"' in log_format
+        assert '"environment":"production"' in log_format
         assert '"request_id":"$request_id"' in config
         assert '"path":"$log_path"' in config
         assert "$request_uri" not in config.split("log_format flowmind", 1)[1].split(";", 1)[0]
