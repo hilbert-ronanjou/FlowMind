@@ -2,7 +2,7 @@
 
 ## Product positioning
 
-FlowMind AI Cloud is an AI-assisted learning workspace for university students. This document freezes the V1.0 business scope and distinguishes the global product boundary from the work authorized for the current sprint. Every implementation change must be checked against both boundaries before coding.
+FlowMind AI Cloud is an AI-assisted learning workspace for university students and a foundational project for learning AI application and Agent development, not the final job-search portfolio project. This document freezes the V1.0 business scope and distinguishes the global product boundary from the work authorized for the current sprint. Every implementation change must be checked against both boundaries before coding. Learning Agent development does not authorize an Agent feature in this milestone.
 
 ## V1.0 global scope
 
@@ -177,13 +177,38 @@ M1-B reuses the approved M1-A images without changing business behavior. Authori
 
 M1-B added no database schema, business API, UI, RAG prompt, Top-K, chunking, embedding model, retrieval algorithm, or AI Import behavior change. Its HTTPS and domain restriction applied to that completed stage.
 
-## Current Sprint scope: Sprint 3 / M3-C2 Private Application Monitoring
+## Previous implementation boundary: Sprint 3 / M3-C2 Private Application Monitoring
 
 M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A request IDs, safe structured logs, the private `/metrics` endpoint, and bounded application metrics remain the foundation. The existing M3-B SLS / LoongCollector integration remains unchanged. M3-C2 authorizes only an optional self-hosted Prometheus/Grafana Compose overlay, private Backend scraping, bounded retention/resource limits, separate persistent monitoring volumes, authenticated loopback-only Grafana access through SSH, one provisioned dashboard using existing metrics, tests, and operating documentation. Public monitoring access, managed monitoring, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
 
+## Current Sprint scope: Sprint 3 / M4-A Interactive AI Protection — Owner Review
+
+The read-only M4 architecture audit is complete. This batch authorizes scope/design documentation only; it does not authorize application changes, creation or execution of migrations, package installation, paid provider calls, commits, tags, or deployment. The proposed implementation contract is [M4-A design and implementation plan](M4_A_AI_PROTECTION.md). Owner approval and a separate implementation instruction are required before coding.
+
+The proposed M4-A implementation is limited to:
+
+- the existing verified JWT `CurrentUser.id` as the quota identity;
+- shared protection for `POST /api/v1/ai/extract` and `POST /api/v1/courses/{course_id}/knowledge/query`, including the latter's question embedding;
+- exactly one PostgreSQL operation-reservation ledger, short atomic transactions, and no lock held during any provider call;
+- configurable initial combined limits of 5 interactive operations per user per rolling 60 seconds, 20 per user per UTC day, and 100 globally per UTC day;
+- bounded extraction input, existing question bounds, a guard on the complete RAG prompt, and explicit Qwen generation-token limits;
+- zero automatic provider retries for the protected interactive paths, conservative non-refundable admission accounting, and optional idempotency keys without response caching;
+- one runtime emergency switch blocking new application provider dispatches, including PDF embedding, without adding PDF quota/fencing in this batch;
+- isolated real PostgreSQL reservation/concurrency tests with mocked providers and existing regression tests.
+
+These are operation quotas, not token billing, money, or a complete provider-account spending cap. One RAG operation may invoke both question embedding and Qwen. PDF work and direct external provider clients are outside the M4-A quota totals. The emergency switch takes effect after Backend restart/recreation; it is not a hot-reloaded control and cannot recall requests already sent.
+
+### Deferred to M4-B; not authorized now
+
+PDF upload/retry quotas, page/text/chunk processing bounds, whole-job embedding reservation, background execution slots, atomic attempt claiming/fencing, and stale-attempt recovery remain M4-B design/implementation work. Existing PDF chunking, retry policy, transactions, and recovery stay unchanged in M4-A except for the shared emergency dispatch switch. M4-B requires its own scope approval.
+
+### Current prohibitions
+
+Payments, subscriptions, billing reconciliation, Redis, Celery, new queues/infrastructure, response caching, dashboards, new observability products, new business pages/modules, Agent features, and Study Plan are excluded. Do not change prompts, Top-K, chunk size/overlap, vector dimensions, embedding model, retrieval/citation behavior, Nginx routing, SLS, or monitoring. No additional table beyond the single proposed ledger is in the M4-A plan; no table is authorized to be created in this documentation batch.
+
 ## Features prohibited during the completed M1-B stage
 
-The following restrictions applied during Sprint 3 / M1-B even when features were mentioned elsewhere in the V1.0 product scope. The current M3-A boundary is stated above.
+The following restrictions applied during Sprint 3 / M1-B even when features were mentioned elsewhere in the V1.0 product scope. They are historical restrictions; the current M4-A documentation-only boundary is stated above.
 
 - HTTPS, domain configuration, or cloud deployment
 - CD or automatic deployment (minimal regression CI is authorized)
@@ -232,7 +257,7 @@ The following restrictions applied during Sprint 3 / M1-B even when features wer
 
 ## Data constraints
 
-The business tables authorized through Sprint 3 / M3-A are exactly:
+The existing five business tables remain:
 
 - `users`
 - `courses`
@@ -241,6 +266,8 @@ The business tables authorized through Sprint 3 / M3-A are exactly:
 - `document_chunks`
 
 The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M1-A table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
+
+M4-A proposes one additional internal infrastructure table, `ai_usage_reservations`, solely to persist atomic interactive-operation admission across concurrent requests and service restarts. It is not a new business module or a billing system. Its schema and migration are for Owner Review only and do not exist yet; this batch permits no database change.
 
 ## Change control
 

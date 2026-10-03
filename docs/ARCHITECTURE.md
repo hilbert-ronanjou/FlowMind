@@ -159,4 +159,14 @@ Course isolation is checked for every recorded retrieval, while the cross-User c
 
 ## Future / Planned
 
+### Sprint 3 / M4-A design for Owner Review (not implemented)
+
+The [M4-A scope and implementation plan](M4_A_AI_PROTECTION.md) proposes one PostgreSQL `ai_usage_reservations` ledger for the existing JWT-protected extraction and Course knowledge-query endpoints. Both share initial configurable operation limits of 5 per user per rolling 60 seconds, 20 per user per UTC day and 100 globally per UTC day. These are operation quotas, not monetary billing; question embedding and the optional Qwen answer belong to one RAG admission.
+
+Admission uses a fresh READ COMMITTED transaction: acquire the fixed transaction advisory lock, obtain database time after the lock, read current counts, insert one reservation and commit. Dispatch marking and finalization are separate short transactions. No database lock is held during Qwen or embedding. Every committed reservation remains counted after failure, timeout or restart; no automatic refund/replay. Interactive SDK retries are explicitly zero. Optional idempotency keys reject duplicate execution without caching responses.
+
+The plan includes extraction/prompt bounds, explicit Qwen output-token limits, and a restart-applied emergency switch blocking new application-managed provider dispatches. The switch also covers PDF embedding, but PDF quota protection, job slots and attempt fencing remain M4-B. The global interactive cap therefore does not claim to bound all provider-account spending. No Redis, Celery, new infrastructure or business module is proposed.
+
+The ledger/migration exist only as a proposal: the running architecture still has the five existing business tables and no interactive quota enforcement. This documentation batch authorizes no application change, migration execution, commit or deployment.
+
 Chat persistence, multi-turn context, reranking, similarity thresholds, BM25/hybrid search, OCR, non-PDF formats, PDF annotation/viewer systems, OSS, SLS, ECS, Redis, Celery, agents, MCP, approximate vector indexes, and AI study planning remain future-only. Inclusion here does not authorize implementation.

@@ -4,7 +4,9 @@ FlowMind AI Cloud is a focused learning workspace for university students. It co
 
 ## Current stage
 
-Sprint 0, Sprint 1, Sprint 2, and the Sprint 3 production application foundation are complete. The current authorized stage is **Sprint 3 / M3-C2 Private Application Monitoring**: optional self-hosted Prometheus/Grafana, existing application metrics, persistent monitoring volumes, and authenticated Grafana access through SSH.
+Sprint 0, Sprint 1, Sprint 2, and the Sprint 3 production application foundation are complete. The current stage is **Sprint 3 / M4-A Scope Freeze and Owner Review**: documentation only for a minimal PostgreSQL-backed interactive AI quota design. [The implementation plan](docs/M4_A_AI_PROTECTION.md) proposes shared limits of 5 operations per user per rolling 60 seconds, 20 per user per UTC day, and 100 globally per UTC day. These are operation quotas, not monetary billing. No quota code or migration has been implemented; application changes, commits and deployment require separate authorization.
+
+FlowMind is a foundational project for learning AI application and Agent development, not the final job-search portfolio project. Keep this milestone small; PDF quota protection and attempt fencing are deferred to M4-B. Existing monitoring/SLS, application routing and AI/RAG algorithms remain unchanged.
 
 The V1.0 product boundary and current sprint restrictions remain defined in [`docs/SCOPE.md`](docs/SCOPE.md).
 
