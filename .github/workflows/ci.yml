@@ -21,8 +21,10 @@ jobs:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql+psycopg://flowmind:ci-only-password@127.0.0.1:5432/flowmind_ci
-      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://flowmind:ci-only-password@127.0.0.1:5432/flowmind_ci
+      # Job-local service only; the quota safety guard requires a loopback host
+      # and an explicitly test-named disposable database.
+      DATABASE_URL: postgresql+psycopg://flowmind:ci-only-password@127.0.0.1:5432/flowmind_ci_test
+      TEST_POSTGRES_DATABASE_URL: postgresql+psycopg://flowmind:ci-only-password@127.0.0.1:5432/flowmind_ci_test
       JWT_SECRET: ci-only-not-a-production-secret-at-least-32-characters
       DASHSCOPE_API_KEY: ""
       DASHSCOPE_BASE_URL: ""
@@ -31,12 +33,12 @@ jobs:
       postgres:
         image: pgvector/pgvector:0.8.6-pg16-bookworm@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
         env:
-          POSTGRES_DB: flowmind_ci
+          POSTGRES_DB: flowmind_ci_test
           POSTGRES_USER: flowmind
           POSTGRES_PASSWORD: ci-only-password
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U flowmind -d flowmind_ci"
+          --health-cmd "pg_isready -U flowmind -d flowmind_ci_test"
           --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v5
@@ -55,7 +57,28 @@ jobs:
       - run: alembic upgrade head
       - run: alembic current
       - run: alembic check
-      - run: pytest -q
+      - name: Verify disposable PostgreSQL 16 and pgvector
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+          from sqlalchemy.engine import make_url
+
+          url = os.environ["TEST_POSTGRES_DATABASE_URL"]
+          parsed = make_url(url)
+          assert url == os.environ["DATABASE_URL"], "CI database URLs must match"
+          assert parsed.host == "127.0.0.1" and parsed.database == "flowmind_ci_test"
+          engine = create_engine(url)
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT current_database()")) == "flowmind_ci_test"
+              assert int(connection.scalar(text("SHOW server_version_num"))) // 10000 == 16
+              assert connection.scalar(text("SELECT extversion FROM pg_extension WHERE extname = 'vector'"))
+          engine.dispose()
+          PY
+      - name: Real PostgreSQL quota tests (no skip or guard bypass)
+        run: pytest -ra tests/test_ai_quota_postgres.py
+      - name: Complete backend regression suite including PostgreSQL tests
+        run: pytest -ra
 
   frontend:
     runs-on: ubuntu-latest
