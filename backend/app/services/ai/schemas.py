@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.course import CourseRead
 from app.schemas.task import TaskRead
+from app.core import config
 
 
 class Priority(str, Enum):
@@ -22,6 +23,8 @@ class ExtractionRequest(BaseModel):
     @field_validator("text")
     @classmethod
     def text_must_not_be_blank(cls, value: str) -> str:
+        if len(value) > config.get_settings().ai_extraction_max_input_chars:
+            raise ValueError("extraction text exceeds the maximum length")
         value = value.strip()
         if not value:
             raise ValueError("text must not be blank")

@@ -11,6 +11,7 @@ from app.services.knowledge.prompts import (
 )
 from app.services.knowledge.retrieval import RetrievedChunk
 from app.services.knowledge.schemas import GroundedAnswer
+from app.services.ai_guard import ensure_paid_ai_enabled
 
 
 class KnowledgeConfigurationError(RuntimeError):
@@ -18,6 +19,10 @@ class KnowledgeConfigurationError(RuntimeError):
 
 
 class GroundedStructuredOutputError(RuntimeError):
+    pass
+
+
+class PromptOverflowError(RuntimeError):
     pass
 
 
@@ -50,19 +55,22 @@ def grounded_answer_with_client(
     question: str,
     candidates: list[RetrievedChunk],
 ) -> GroundedGeneration:
+    ensure_paid_ai_enabled()
+    settings = get_settings()
+    messages = [
+        {"role": "system", "content": build_grounded_system_prompt()},
+        {"role": "user", "content": build_grounded_user_prompt(question, candidates)},
+    ]
+    if sum(len(message["content"]) for message in messages) > settings.ai_rag_max_prompt_chars:
+        raise PromptOverflowError("Knowledge prompt exceeds the maximum length")
     started = perf_counter()
     completion = observe_ai_call(
         "grounded_answer",
         lambda: client.chat.completions.parse(
             model=model,
-            messages=[
-                {"role": "system", "content": build_grounded_system_prompt()},
-                {
-                    "role": "user",
-                    "content": build_grounded_user_prompt(question, candidates),
-                },
-            ],
+            messages=messages,
             response_format=GroundedAnswer,
+            max_tokens=settings.ai_qwen_max_output_tokens,
         ),
     )
     latency_ms = (perf_counter() - started) * 1000
@@ -82,9 +90,7 @@ def grounded_answer_with_client(
     )
 
 
-def generate_grounded_answer(
-    question: str, candidates: list[RetrievedChunk]
-) -> GroundedGeneration:
+def require_knowledge_configuration() -> None:
     settings = get_settings()
     required_settings = {
         "DASHSCOPE_API_KEY": settings.dashscope_api_key,
@@ -97,11 +103,19 @@ def generate_grounded_answer(
     if missing:
         raise KnowledgeConfigurationError("Knowledge answer service is not configured")
 
+
+def generate_grounded_answer(
+    question: str, candidates: list[RetrievedChunk]
+) -> GroundedGeneration:
+    ensure_paid_ai_enabled()
+    require_knowledge_configuration()
+    settings = get_settings()
+
     client = OpenAI(
         api_key=settings.dashscope_api_key,
         base_url=settings.dashscope_base_url,
         timeout=60.0,
-        max_retries=1,
+        max_retries=0,
     )
     return grounded_answer_with_client(
         client=client,

@@ -11,6 +11,7 @@ from openai import (
 
 from app.core.config import get_settings
 from app.core.observability import observe_ai_call
+from app.services.ai_guard import ensure_paid_ai_enabled
 
 
 class EmbeddingConfigurationError(RuntimeError):
@@ -48,6 +49,7 @@ def embed_texts_with_client(
     dimensions: int,
     texts: Sequence[str],
 ) -> list[list[float]]:
+    ensure_paid_ai_enabled()
     normalized = _validated_texts(texts)
     response = observe_ai_call(
         "embedding",
@@ -76,18 +78,24 @@ def embed_texts_with_client(
     return vectors
 
 
-def embed_texts(texts: Sequence[str]) -> list[list[float]]:
+def require_embedding_configuration() -> None:
     settings = get_settings()
     if not settings.dashscope_api_key or not settings.dashscope_api_key.strip():
         raise EmbeddingConfigurationError("Embedding service is not configured")
     if not settings.dashscope_base_url or not settings.dashscope_base_url.strip():
         raise EmbeddingConfigurationError("Embedding service is not configured")
 
+
+def embed_texts(texts: Sequence[str], *, max_retries: int = 1) -> list[list[float]]:
+    ensure_paid_ai_enabled()
+    require_embedding_configuration()
+    settings = get_settings()
+
     client = OpenAI(
         api_key=settings.dashscope_api_key,
         base_url=settings.dashscope_base_url,
         timeout=30.0,
-        max_retries=1,
+        max_retries=max_retries,
     )
     try:
         return embed_texts_with_client(
@@ -104,5 +112,5 @@ def embed_texts(texts: Sequence[str]) -> list[list[float]]:
         ) from exc
 
 
-def embed_text(text: str) -> list[float]:
-    return embed_texts([text])[0]
+def embed_text(text: str, *, max_retries: int = 1) -> list[float]:
+    return embed_texts([text], max_retries=max_retries)[0]

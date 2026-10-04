@@ -118,7 +118,7 @@ def test_cross_user_course_query_is_404_before_provider_calls(
     monkeypatch.setattr(
         knowledge_routes,
         "embed_text",
-        lambda _question: (_ for _ in ()).throw(AssertionError("embedding called")),
+        lambda _question, **_kwargs: (_ for _ in ()).throw(AssertionError("embedding called")),
     )
     monkeypatch.setattr(
         knowledge_routes,
@@ -142,7 +142,7 @@ def test_no_ready_documents_skips_embedding_and_qwen(
     monkeypatch.setattr(
         knowledge_routes,
         "embed_text",
-        lambda _question: (_ for _ in ()).throw(AssertionError("embedding called")),
+        lambda _question, **_kwargs: (_ for _ in ()).throw(AssertionError("embedding called")),
     )
     monkeypatch.setattr(
         knowledge_routes,
@@ -174,7 +174,8 @@ def test_empty_retrieval_skips_qwen_after_one_embedding(
     add_ready_document(db, course_id)
     embedding_calls = 0
 
-    def fake_embed(_question: str) -> list[float]:
+    def fake_embed(_question: str, *, max_retries: int) -> list[float]:
+        assert max_retries == 0
         nonlocal embedding_calls
         embedding_calls += 1
         return [0.0] * 1024
@@ -220,7 +221,7 @@ def test_answerable_result_uses_top_five_and_backend_citations(
         for index in range(1, 7)
     ]
 
-    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question: [0.0] * 1024)
+    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question, **_kwargs: [0.0] * 1024)
 
     def fake_search(*_args, **kwargs):
         assert kwargs["course_id"] == course_id
@@ -339,7 +340,7 @@ def test_chunk_id_outside_candidates_is_grounding_failure(
 ):
     course_id = create_course(client, auth_headers, "Invalid Citation")
     add_ready_document(db, course_id)
-    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question: [0.0] * 1024)
+    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question, **_kwargs: [0.0] * 1024)
     monkeypatch.setattr(
         knowledge_routes,
         "search_ready_chunk_candidates",
@@ -398,7 +399,7 @@ def test_embedding_failures_are_safe(
     monkeypatch.setattr(
         knowledge_routes,
         "embed_text",
-        lambda _question: (_ for _ in ()).throw(error),
+        lambda _question, **_kwargs: (_ for _ in ()).throw(error),
     )
 
     response = client.post(
@@ -438,7 +439,7 @@ def test_qwen_failures_are_safe(
         ),
         "structured": GroundedStructuredOutputError("private-invalid-output"),
     }
-    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question: [0.0] * 1024)
+    monkeypatch.setattr(knowledge_routes, "embed_text", lambda _question, **_kwargs: [0.0] * 1024)
     monkeypatch.setattr(
         knowledge_routes,
         "search_ready_chunk_candidates",

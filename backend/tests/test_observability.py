@@ -317,20 +317,20 @@ def test_rag_outcomes_are_bounded(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         knowledge_routes, "_execute_query_course_knowledge", lambda *_: no_answer_response()
     )
-    result = knowledge_routes.query_course_knowledge(1, None, None, None)
+    result = knowledge_routes.query_course_knowledge(1, None, None, None, None)
     assert result.answerable is False
 
     monkeypatch.setattr(
         knowledge_routes, "_execute_query_course_knowledge", lambda *_: SimpleNamespace(answerable=True)
     )
-    assert knowledge_routes.query_course_knowledge(1, None, None, None).answerable is True
+    assert knowledge_routes.query_course_knowledge(1, None, None, None, None).answerable is True
 
     def fail(*_args):
         raise RuntimeError("private-question")
 
     monkeypatch.setattr(knowledge_routes, "_execute_query_course_knowledge", fail)
     with pytest.raises(RuntimeError):
-        knowledge_routes.query_course_knowledge(1, None, None, None)
+        knowledge_routes.query_course_knowledge(1, None, None, None, None)
 
     assert sample("rag_queries_total", {"outcome": "unanswerable"}) == counts["unanswerable"] + 1
     assert sample("rag_queries_total", {"outcome": "answerable"}) == counts["answerable"] + 1

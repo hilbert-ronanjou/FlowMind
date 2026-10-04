@@ -153,6 +153,39 @@ Backend serves Prometheus text at `http://backend:8000/metrics` on the private D
 
 The request ID is the correlation key between Nginx and Backend logs. The existing production SLS / LoongCollector integration is managed separately and is unchanged by monitoring configuration. For the optional private Prometheus/Grafana stack, credentials, SSH access, and persistent-volume operations, follow [the monitoring runbook](MONITORING.md).
 
+## Interactive AI protection (M4-A Round 2)
+
+Extraction and Course questions share the PostgreSQL operation ledger: initial
+limits are 5/user/rolling 60 seconds, 20/user/UTC day and 100/global/UTC day.
+Configure the `AI_INTERACTIVE_*` Backend runtime settings consistently across
+processes. Committed admissions stay counted after failure, timeout, restart or
+cancellation; this is not monetary billing. PDF jobs are outside these quotas.
+
+`Idempotency-Key` is optional, 1-128 ASCII characters, scoped by verified user and
+operation. Reusing an accepted key returns 409 without another provider call;
+there is no response replay/cache. Without a key, every accepted request is new.
+429 includes `Retry-After` based on enough records expiring under the current
+limits. Database/lock/dispatch-commit failure closes admission with safe 503.
+A valid successful result remains HTTP 200 if final settlement fails: the
+reservation stays counted and a sanitized settlement event is logged, never an
+automatic provider retry.
+
+Extraction input is capped at 10,000 characters; questions remain capped at
+2,000; the complete RAG prompt is capped at 24,000 characters; both interactive
+Qwen calls have a 4,096-token generation limit. Interactive SDK retries are zero;
+PDF embedding keeps its existing retry default. All bounds are positive runtime
+settings in the examples. They do not change retrieval, prompts or chunking.
+
+To stop new application-managed paid requests, set
+`AI_PAID_OPERATIONS_ENABLED=false` in the private Backend runtime configuration,
+then recreate Backend through the existing deployment procedure. Settings are
+cached: editing a file alone is not a live shutdown. This also blocks PDF
+embedding at its provider boundary, but does not add PDF quotas or attempt
+fencing. Already-sent requests cannot be recalled. Health, CRUD and Confirm
+Import remain available. Independent SDK clients/credentials are not controlled
+by this application switch. No restart or production change is performed by the
+development test suite.
+
 ## CI
 
 `.github/workflows/ci.yml` runs for PRs, pushes to main/master/codex branches, and manual dispatch. Backend installs constraints-locked test dependencies, upgrades an ephemeral PostgreSQL/pgvector database, and runs pytest including the vector integration test. Frontend runs frozen install, lint, typecheck, and build. A separate job builds both images from their own contexts. CI has read-only repository permission, no real provider credentials, no paid evaluation, no image push, and no deployment. A repository owner must configure the three CI jobs as required checks to enforce a merge gate; adding YAML alone cannot change branch protection.

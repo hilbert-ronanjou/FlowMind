@@ -1,9 +1,14 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, Header, HTTPException, status
 from openai import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
     AuthenticationError,
+    APIResponseValidationError,
+    LengthFinishReasonError,
+    ContentFilterFinishReasonError,
     PermissionDeniedError,
     RateLimitError,
 )
@@ -15,6 +20,11 @@ from app.services.ai.extractor import (
     AIConfigurationError,
     StructuredOutputError,
     extract_course_content,
+    require_extraction_configuration,
+)
+from app.models.ai_usage_reservation import Operation
+from app.services.ai_guard import (
+    InteractiveQuota, PaidAIDisabled, ensure_paid_ai_enabled, interactive_operation,
 )
 from app.services.ai.importer import import_confirmed_draft
 from app.services.ai.schemas import (
@@ -30,10 +40,21 @@ router = APIRouter()
 @router.post("/extract", response_model=ExtractionResult)
 def extract_content(
     payload: ExtractionRequest,
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
+    db: DbSession,
+    quota: InteractiveQuota,
+    idempotency_key: Annotated[str | None, Header(min_length=1, max_length=128, pattern=r"^[\x00-\x7f]+$")] = None,
 ) -> ExtractionResult:
+    user_id = current_user.id
     try:
-        return extract_course_content(payload.text)
+        ensure_paid_ai_enabled()
+        require_extraction_configuration()
+        db.close()  # End authentication reads before quota/provider work.
+        with interactive_operation(quota, user_id, Operation.EXTRACTION,
+                                   {"text": payload.text}, idempotency_key):
+            return extract_course_content(payload.text)
+    except PaidAIDisabled:
+        raise HTTPException(503, "Paid AI operations are temporarily unavailable") from None
     except AIConfigurationError as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -54,7 +75,8 @@ def extract_content(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI provider request failed",
         ) from error
-    except (StructuredOutputError, ValidationError) as error:
+    except (StructuredOutputError, ValidationError, APIResponseValidationError,
+            LengthFinishReasonError, ContentFilterFinishReasonError) as error:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="AI provider returned an invalid structured result",

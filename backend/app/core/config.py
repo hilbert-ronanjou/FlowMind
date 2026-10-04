@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     dashscope_api_key: str | None = None
     dashscope_base_url: str | None = None
     qwen_model: str | None = None
+    ai_paid_operations_enabled: bool = True
+    ai_interactive_user_window_limit: int = Field(default=5, gt=0)
+    ai_interactive_window_seconds: int = Field(default=60, gt=0)
+    ai_interactive_user_daily_limit: int = Field(default=20, gt=0)
+    ai_interactive_global_daily_limit: int = Field(default=100, gt=0)
+    ai_extraction_max_input_chars: int = Field(default=10000, gt=0)
+    ai_rag_max_prompt_chars: int = Field(default=24000, gt=0)
+    ai_qwen_max_output_tokens: int = Field(default=4096, gt=0)
     embedding_model: Literal["text-embedding-v4"] = "text-embedding-v4"
     embedding_dimensions: Literal[1024] = 1024
     document_storage_root: Path = Path("../storage/documents")
