@@ -157,9 +157,9 @@ Course isolation is checked for every recorded retrieval, while the cross-User c
 - `backend/`: FastAPI, SQLAlchemy, Alembic, Pydantic, and pytest
 - `docs/`: frozen scope, architecture, and deferred backlog
 
-## Future / Planned
+## AI protection and future work
 
-### Sprint 3 / M4-A design for Owner Review (not implemented)
+### Sprint 3 / M4-A interactive protection (implemented)
 
 The [M4-A scope and implementation plan](M4_A_AI_PROTECTION.md) proposes one PostgreSQL `ai_usage_reservations` ledger for the existing JWT-protected extraction and Course knowledge-query endpoints. Both share initial configurable operation limits of 5 per user per rolling 60 seconds, 20 per user per UTC day and 100 globally per UTC day. These are operation quotas, not monetary billing; question embedding and the optional Qwen answer belong to one RAG admission.
 
@@ -167,6 +167,12 @@ Admission uses a fresh READ COMMITTED transaction: acquire the fixed transaction
 
 The plan includes extraction/prompt bounds, explicit Qwen output-token limits, and a restart-applied emergency switch blocking new application-managed provider dispatches. The switch also covers PDF embedding, but PDF quota protection, job slots and attempt fencing remain M4-B. The global interactive cap therefore does not claim to bound all provider-account spending. No Redis, Celery, new infrastructure or business module is proposed.
 
-The ledger/migration exist only as a proposal: the running architecture still has the five existing business tables and no interactive quota enforcement. This documentation batch authorizes no application change, migration execution, commit or deployment.
+The ledger, migration `20261003_0003` and both endpoint integrations are implemented; Owner reports CI acceptance and production deployment. The frozen M4-A design remains unchanged. Production was not accessed to verify that report in the M4-B task.
+
+### Sprint 3 / M4-B PDF protection (local implementation)
+
+See [the exact M4-B contract](M4_B_PDF_PROTECTION.md). A separate infrastructure ledger, `document_processing_attempts`, reserves one whole PDF processing attempt per accepted upload/Retry. Every state counts against 2/user/UTC day and 20/global/UTC day, never the interactive allowance. A partial unique active-user index and a short fixed PostgreSQL advisory-lock protocol atomically enforce one active PDF per user; admission and Document creation/token reset share one commit. Page/text/chunk caps (80/150000/200) precede any embedding; chunking/model/dimensions are unchanged.
+
+BackgroundTasks captures the UUID attempt. Current-token/lease/state checks guard claim, every paid batch and final chunk/state writes. Non-blocking per-user and per-Document session execution locks share one AUTOCOMMIT connection and exclude overlapping local processing chains even after a lease expires. They retain one connection per PDF, but no open transaction/global quota/row lock during provider calls. Each SDK batch explicitly selects zero retries. Startup/admission/obsolete-worker recovery marks expired attempts interrupted without refund or auto-resume. Document ownership remains solely through Course; ledger user_id is trusted admission identity, not an authorization path. No queue, business module, new metric or infrastructure is introduced.
 
 Chat persistence, multi-turn context, reranking, similarity thresholds, BM25/hybrid search, OCR, non-PDF formats, PDF annotation/viewer systems, OSS, SLS, ECS, Redis, Celery, agents, MCP, approximate vector indexes, and AI study planning remain future-only. Inclusion here does not authorize implementation.

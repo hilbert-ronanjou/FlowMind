@@ -30,6 +30,14 @@ from app.services.knowledge.ingestion import (
     normalize_page_text,
 )
 from conftest import TEST_STORAGE_ROOT, TestingSession, register_user
+from app.services import document_protection as protection
+from app.models.document_processing_attempt import DocumentProcessingAttempt as Attempt
+
+
+def prepare_attempt(db: Session, document: Document):
+    rid = protection.reserve_attempt(db, document, document.course.user_id, datetime.now(UTC))
+    db.commit()
+    return rid
 
 
 def make_pdf(pages: list[str]) -> bytes:
@@ -192,14 +200,15 @@ def test_ingestion_normalizes_extracted_nul_before_chunking_and_embedding(
         assert [page.page_number for page in pages] == [1, 2]
         return real_build_chunk_drafts(pages, **kwargs)
 
-    def fake_embed(texts: list[str]) -> list[list[float]]:
+    def fake_embed(texts: list[str], *, max_retries: int) -> list[list[float]]:
+        assert max_retries == 0
         assert all("\x00" not in value for value in texts)
         embedded.extend(texts)
         return [[1.0] + [0.0] * 1023 for _ in texts]
 
     monkeypatch.setattr(ingestion, "build_chunk_drafts", checked_build)
     monkeypatch.setattr(ingestion, "embed_texts", fake_embed)
-    process_document(document.id)
+    process_document(document.id, prepare_attempt(db, document))
 
     db.expire_all()
     saved = db.get(Document, document.id)
@@ -238,7 +247,8 @@ def test_processing_pipeline_batches_embeddings_and_becomes_ready(
 
     calls: list[list[str]] = []
 
-    def fake_embed(texts: list[str]) -> list[list[float]]:
+    def fake_embed(texts: list[str], *, max_retries: int) -> list[list[float]]:
+        assert max_retries == 0
         calls.append(list(texts))
         return [[float(index == 0)] + [0.0] * 1023 for index, _ in enumerate(texts)]
 
@@ -246,7 +256,7 @@ def test_processing_pipeline_batches_embeddings_and_becomes_ready(
     monkeypatch.setattr(ingestion, "embed_texts", fake_embed)
     monkeypatch.setattr(get_settings(), "embedding_batch_size", 16)
 
-    process_document(document.id)
+    process_document(document.id, prepare_attempt(db, document))
 
     db.expire_all()
     saved = db.get(Document, document.id)
@@ -291,7 +301,7 @@ def test_corrupted_or_empty_pdf_becomes_failed_without_chunks(
     db.commit()
     monkeypatch.setattr(ingestion, "SessionLocal", TestingSession)
 
-    process_document(document.id)
+    process_document(document.id, prepare_attempt(db, document))
 
     db.expire_all()
     saved = db.get(Document, document.id)
@@ -317,9 +327,9 @@ def test_invalid_embedding_dimension_marks_failed_and_removes_chunks(
     )
     db.commit()
     monkeypatch.setattr(ingestion, "SessionLocal", TestingSession)
-    monkeypatch.setattr(ingestion, "embed_texts", lambda _texts: [[0.0] * 8])
+    monkeypatch.setattr(ingestion, "embed_texts", lambda _texts, **_kwargs: [[0.0] * 8])
 
-    process_document(document.id)
+    process_document(document.id, prepare_attempt(db, document))
 
     db.expire_all()
     saved = db.get(Document, document.id)
@@ -350,6 +360,10 @@ def test_ready_persistence_rolls_back_as_one_transaction(db: Session, monkeypatc
         )
     ]
     db.commit()
+    attempt_id = prepare_attempt(db, document)
+    protection.claim_attempt(db, document.id, attempt_id, datetime.now(UTC))
+    protection.dispatch_batch(db, document.id, attempt_id, datetime.now(UTC))
+    db.commit()
     db.execute(
         text(
             "CREATE TRIGGER reject_new_chunks BEFORE INSERT ON document_chunks "
@@ -359,11 +373,12 @@ def test_ready_persistence_rolls_back_as_one_transaction(db: Session, monkeypatc
     db.commit()
     monkeypatch.setattr(ingestion, "SessionLocal", TestingSession)
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(protection.DocumentProtectionUnavailable):
         ingestion._persist_ready_document(
             document.id,
             [ChunkDraft(page_number=1, content="replacement")],
             [[1.0] + [0.0] * 1023],
+            attempt_id,
         )
 
     db.expire_all()
@@ -382,7 +397,7 @@ def test_upload_contract_duplicate_and_same_name_rules(
     headers = {"Authorization": f"Bearer {token['access_token']}"}
     first_course = create_course(client, headers, "First Course")
     second_course = create_course(client, headers, "Second Course")
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
     pdf = make_pdf(["Database transactions"])
 
     created = client.post(
@@ -420,6 +435,13 @@ def test_upload_contract_duplicate_and_same_name_rules(
     assert same_name.status_code == 409
     assert same_name.json()["detail"]["code"] == "same_filename_different_content"
 
+    # Finish the first mocked job before exercising cross-Course duplication.
+    attempt = db.get(Attempt, db.get(Document, created.json()["id"]).current_attempt_id)
+    attempt.state = "CANCELLED"
+    attempt.finished_at = datetime.now(UTC)
+    db.get(Document, created.json()["id"]).status = DocumentStatus.FAILED
+    db.commit()
+
     other_course = client.post(
         f"/api/v1/courses/{second_course}/documents",
         headers=headers,
@@ -435,7 +457,7 @@ def test_upload_rejects_non_pdf_signature_and_measured_size(
     token = register_user(client, "validation@example.com")
     headers = {"Authorization": f"Bearer {token['access_token']}"}
     course_id = create_course(client, headers, "Validation Course")
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
 
     invalid = client.post(
         f"/api/v1/courses/{course_id}/documents",
@@ -487,7 +509,7 @@ def test_document_quota_counts_only_ready_and_processing(
             status=DocumentStatus.READY if index % 2 else DocumentStatus.PROCESSING,
         )
     db.commit()
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
 
     rejected = client.post(
         f"/api/v1/courses/{course_id}/documents",
@@ -526,7 +548,7 @@ def test_document_apis_enforce_cross_user_404(
         content=make_pdf(["Private text"]),
     )
     db.commit()
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
 
     assert client.get(
         f"/api/v1/courses/{course_id}/documents", headers=intruder_headers
@@ -705,7 +727,7 @@ def test_retry_rules_and_missing_source(
         status=DocumentStatus.FAILED,
     )
     db.commit()
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
 
     retried = client.post(f"/api/v1/documents/{failed.id}/retry", headers=headers)
     assert retried.status_code == 202
@@ -754,7 +776,7 @@ def test_retry_respects_course_document_quota(
             status=DocumentStatus.READY,
         )
     db.commit()
-    monkeypatch.setattr(document_routes, "process_document", lambda _document_id: None)
+    monkeypatch.setattr(document_routes, "process_document", lambda _document_id, _attempt_id: None)
 
     response = client.post(
         f"/api/v1/documents/{failed.id}/retry", headers=headers

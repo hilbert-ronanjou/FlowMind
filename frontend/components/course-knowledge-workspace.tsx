@@ -55,6 +55,9 @@ function friendlyError(error: unknown, fallback: string): string {
     file_too_large: "PDF 不能超过 20 MB。",
     invalid_file: "请选择可提取文字的有效 PDF 文件。",
     document_processing: "资料仍在处理中，请等待处理完成后再操作。",
+    document_processing_busy: "你已有一份资料正在处理，请等待完成后再上传或重试。",
+    document_processing_quota: "今日 PDF 处理额度已用完，请在 UTC 零点（北京时间 08:00）后重试。",
+    document_processing_unavailable: "PDF 处理暂时不可用，请稍后重试。",
     retry_not_allowed: "只有处理失败的资料可以重试。",
     source_file_missing: "原始 PDF 已不可用，请删除后重新上传。",
   };
@@ -66,6 +69,15 @@ function friendlyError(error: unknown, fallback: string): string {
   if (error.status === 502) return "资料问答结果暂时无法验证，请稍后重试。";
   if (error.status === 503) return "AI 服务暂时不可用，请稍后重试。";
   return fallback;
+}
+
+function documentFailure(reason: string): string {
+  const limits: Record<string, string> = {
+    "PDF page limit exceeded. Split the PDF into smaller files.": "PDF 页数超过处理上限，请拆分成更小的文件后上传。",
+    "PDF text limit exceeded. Split the PDF into smaller files.": "PDF 提取文字超过处理上限，请拆分后上传。",
+    "PDF chunk limit exceeded. Split the PDF into smaller files.": "PDF 分块数量超过处理上限，请拆分后上传。",
+  };
+  return limits[reason] ?? reason;
 }
 
 export function CourseKnowledgeWorkspace({ courseId }: { courseId: number }) {
@@ -343,7 +355,7 @@ export function CourseKnowledgeWorkspace({ courseId }: { courseId: number }) {
                           {formatBytes(document.file_size)} · {new Date(document.created_at).toLocaleString()}
                         </p>
                         {document.status === "FAILED" && document.failure_reason && (
-                          <p className="mt-2 text-sm leading-5 text-red-700">{document.failure_reason}</p>
+                          <p className="mt-2 text-sm leading-5 text-red-700">{documentFailure(document.failure_reason)}</p>
                         )}
                         {document.status === "PROCESSING" && (
                           <p className="mt-2 flex items-center gap-2 text-sm text-amber-700">

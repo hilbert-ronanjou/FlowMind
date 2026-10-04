@@ -13,10 +13,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.database import Base
+from uuid import UUID
 
 
 EMBEDDING_DIMENSIONS = 1024
@@ -61,6 +63,8 @@ class Document(Base):
         default=DocumentStatus.PROCESSING,
     )
     failure_reason: Mapped[str | None] = mapped_column(Text)
+    # Fencing token, not an ownership field. Old Documents remain compatible.
+    current_attempt_id: Mapped[UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.api.deps import CurrentUser, DbSession
 from app.api.routes.courses import owned_course_or_404
@@ -11,6 +11,12 @@ from app.core.config import get_settings
 from app.models.course import Course
 from app.models.document import Document, DocumentStatus
 from app.schemas.document import DocumentRead
+from app.services.ai_guard import PaidAIDisabled
+from app.services.document_protection import (
+    DocumentAllowanceExceeded, DocumentProtectionUnavailable,
+    lock_processing, recover_expired, reserve_attempt,
+    abort_processing,
+)
 from app.services.knowledge.ingestion import (
     DocumentProcessingError,
     FileTooLargeError,
@@ -29,6 +35,14 @@ router = APIRouter()
 
 def error_detail(code: str, message: str, **extra: object) -> dict[str, object]:
     return {"code": code, "message": message, **extra}
+
+
+def protection_error(error: Exception) -> HTTPException:
+    if isinstance(error, DocumentAllowanceExceeded):
+        return HTTPException(429, detail=error_detail(error.code, str(error)),
+                             headers={"Retry-After": str(error.retry_after)})
+    return HTTPException(503, detail=error_detail(
+        "document_processing_unavailable", "PDF processing is temporarily unavailable."))
 
 
 def owned_document_or_404(db: DbSession, user_id: int, document_id: int) -> Document:
@@ -106,6 +120,9 @@ async def upload_document(
         await file.close()
 
     try:
+        db.rollback()  # End ownership preflight before the global PDF lock.
+        timestamp = lock_processing(db)
+        recover_expired(db, timestamp)
         owned_course_or_404(
             db, current_user.id, course_id, for_update=True
         )
@@ -161,8 +178,13 @@ async def upload_document(
             failure_reason=None,
         )
         db.add(document)
+        attempt_id = reserve_attempt(db, document, current_user.id, timestamp)
+        response = DocumentRead.model_validate(document)
         db.commit()
-        db.refresh(document)
+    except (DocumentAllowanceExceeded, DocumentProtectionUnavailable, PaidAIDisabled) as exc:
+        db.rollback()
+        remove_stored_pdf(stored.storage_path)
+        raise protection_error(exc) from None
     except HTTPException:
         db.rollback()
         remove_stored_pdf(stored.storage_path)
@@ -190,6 +212,10 @@ async def upload_document(
             status_code=status.HTTP_409_CONFLICT,
             detail=error_detail("document_conflict", "The document could not be created."),
         ) from None
+    except SQLAlchemyError:
+        abort_processing(db)
+        remove_stored_pdf(stored.storage_path)
+        raise protection_error(DocumentProtectionUnavailable()) from None
     except Exception:
         db.rollback()
         remove_stored_pdf(stored.storage_path)
@@ -201,8 +227,7 @@ async def upload_document(
             ),
         ) from None
 
-    response = DocumentRead.model_validate(document)
-    background_tasks.add_task(process_document, document.id)
+    background_tasks.add_task(process_document, document.id, attempt_id)
     return response
 
 
@@ -302,6 +327,14 @@ def retry_document(
     current_user: CurrentUser,
 ) -> DocumentRead:
     document = owned_document_or_404(db, current_user.id, document_id)
+    db.rollback()
+    try:
+        timestamp = lock_processing(db)
+        recover_expired(db, timestamp)
+    except Exception:
+        db.rollback()
+        raise protection_error(DocumentProtectionUnavailable()) from None
+    document = owned_document_or_404(db, current_user.id, document_id)
     owned_course_or_404(
         db, current_user.id, document.course_id, for_update=True
     )
@@ -334,11 +367,16 @@ def retry_document(
             ),
         )
 
-    document.status = DocumentStatus.PROCESSING
-    document.failure_reason = None
     try:
+        attempt_id = reserve_attempt(db, document, current_user.id, timestamp)
+        response = DocumentRead.model_validate(document)
         db.commit()
-        db.refresh(document)
+    except (DocumentAllowanceExceeded, DocumentProtectionUnavailable, PaidAIDisabled) as exc:
+        db.rollback()
+        raise protection_error(exc) from None
+    except SQLAlchemyError:
+        abort_processing(db)
+        raise protection_error(DocumentProtectionUnavailable()) from None
     except Exception:
         db.rollback()
         logger.error("Document retry failed", extra={"event": "document_retry_failed"})
@@ -346,6 +384,5 @@ def retry_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_detail("retry_failed", "The document could not be retried."),
         ) from None
-    response = DocumentRead.model_validate(document)
-    background_tasks.add_task(process_document, document.id)
+    background_tasks.add_task(process_document, document.id, attempt_id)
     return response

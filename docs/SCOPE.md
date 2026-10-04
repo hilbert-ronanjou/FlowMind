@@ -181,11 +181,11 @@ M1-B added no database schema, business API, UI, RAG prompt, Top-K, chunking, em
 
 M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A request IDs, safe structured logs, the private `/metrics` endpoint, and bounded application metrics remain the foundation. The existing M3-B SLS / LoongCollector integration remains unchanged. M3-C2 authorizes only an optional self-hosted Prometheus/Grafana Compose overlay, private Backend scraping, bounded retention/resource limits, separate persistent monitoring volumes, authenticated loopback-only Grafana access through SSH, one provisioned dashboard using existing metrics, tests, and operating documentation. Public monitoring access, managed monitoring, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
 
-## Current Sprint scope: Sprint 3 / M4-A Interactive AI Protection — Implemented and locally accepted; not production deployed
+## Completed foundation: Sprint 3 / M4-A Interactive AI Protection
 
 The read-only M4 architecture audit and the separately authorized M4-A implementation are complete. Round 1 implemented the single PostgreSQL reservation ledger, migration `20261003_0003`, and concurrency-safe quota service. Round 2 integrated extraction and Course RAG endpoints under the frozen [M4-A contract](M4_A_AI_PROTECTION.md). Both rounds passed local acceptance with disposable PostgreSQL/pgvector and mocked providers; the Round 2 baseline passed 250 backend tests with no failures or skips, including all 30 existing PostgreSQL quota tests. The follow-up adds a regression for original AI failure plus settlement failure and updates status documentation only; it changes no business logic or frozen rules.
 
-M4-A is not deployed to production. No production migration, ECS deployment or real paid-provider acceptance is claimed. Deployment, paid-provider smoke tests, commits and tags remain separately approval-gated. M4-B is not authorized.
+Owner confirmed M4-A passed CI and was deployed to production before this M4-B task. This is Owner-provided status, not a production check performed in this task. The frozen M4-A design and ledger remain unchanged. Further deployment, paid-provider calls, commits and tags remain approval-gated.
 
 The implemented, frozen M4-A scope is limited to:
 
@@ -200,13 +200,13 @@ The implemented, frozen M4-A scope is limited to:
 
 These are operation quotas, not token billing, money, or a complete provider-account spending cap. One RAG operation may invoke both question embedding and Qwen. PDF work and direct external provider clients are outside the M4-A quota totals. The emergency switch takes effect after Backend restart/recreation; it is not a hot-reloaded control and cannot recall requests already sent.
 
-### Deferred to M4-B; not authorized now
+## Current Sprint scope: Sprint 3 / M4-B Minimal PDF Background Protection
 
-PDF upload/retry quotas, page/text/chunk processing bounds, whole-job embedding reservation, background execution slots, atomic attempt claiming/fencing, and stale-attempt recovery remain M4-B design/implementation work. Existing PDF chunking, retry policy, transactions, and recovery stay unchanged in M4-A except for the shared emergency dispatch switch. M4-B requires its own scope approval.
+Owner authorizes one implementation/test/local-acceptance batch described in [M4-B PDF protection](M4_B_PDF_PROTECTION.md): configurable 80-page/150000-text-character/200-chunk pre-embedding bounds; independent 2/user/UTC-day and 20/global/UTC-day whole-job admissions; one active Document per user; PostgreSQL atomic quota/claim, per-Document non-blocking execution exclusion and attempt fencing; conservative failure/uncertainty accounting and stale recovery; zero automatic ingestion retries; necessary migration, environment examples, documentation and existing error display only. Keep 20 MiB uploads, 20 active Documents/Course, JWT ownership, FastAPI BackgroundTasks, embedding model/dimensions, chunk sizing/overlap, prompts and retrieval unchanged. Validation uses disposable local PostgreSQL/pgvector and mock providers, never production or paid models.
 
 ### Current prohibitions
 
-Payments, subscriptions, billing reconciliation, Redis, Celery, new queues/infrastructure, response caching, dashboards, new observability products, new business pages/modules, Agent features, and Study Plan are excluded. Do not change prompts, Top-K, chunk size/overlap, vector dimensions, embedding model, retrieval/citation behavior, Nginx routing, SLS, or monitoring. No additional table beyond the single implemented ledger is in the M4-A scope; this regression/status follow-up authorizes no schema change.
+Payments, subscriptions, billing reconciliation, Redis, Celery, new queues/infrastructure, response caching, dashboards, new observability products, new business pages/modules, Agent features, and Study Plan are excluded. Do not change prompts, Top-K, chunk size/overlap, vector dimensions, embedding model, retrieval/citation behavior, Nginx routing, SLS, or monitoring. M4-B authorizes only one additional infrastructure attempt table and one nullable Document token, not a new business module. Do not access ECS, call real providers, deploy or tag. Owner separately authorized final review, small defect fixes, local acceptance, an isolated M4-B commit/push and verification of the exact commit's CI; this does not authorize production operations.
 
 ## Features prohibited during the completed M1-B stage
 
@@ -269,7 +269,7 @@ The existing five business tables remain:
 
 The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M1-A table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
 
-M4-A implemented one additional internal infrastructure table, `ai_usage_reservations`, solely to persist atomic interactive-operation admission across concurrent requests and service restarts. It is not a new business module or a billing system. Its model and migration `20261003_0003` exist and passed disposable local PostgreSQL acceptance; they have not been applied to production as part of M4-A. This regression/status follow-up permits no schema change.
+M4-A implemented `ai_usage_reservations` for interactive admissions (Owner reports production deployment). M4-B adds `document_processing_attempts` plus nullable `documents.current_attempt_id`, migration `20261004_0004`, solely for independent PDF debits, background claims and stale-result fencing. These are infrastructure accounting, not billing or extra business modules. Course remains the sole Document ownership source. M4-A schema/rules remain unchanged; no production migration is performed by this local implementation task.
 
 ## Change control
 

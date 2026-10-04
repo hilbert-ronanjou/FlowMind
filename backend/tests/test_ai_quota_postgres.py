@@ -323,6 +323,19 @@ def test_full_migration_chain_preserves_five_tables_and_metadata(pg):
         with pg[0].begin() as conn:
             with Operations.context(MigrationContext.configure(conn)):
                 module.upgrade()
+    # Current ORM also has the additive M4-B token. Exercise the real newest
+    # migration around the unchanged M4-A roundtrip, rather than using a newer
+    # model to insert into an intentionally older schema.
+    pg[1]("upgrade")
+    path = Path(__file__).parents[1] / "alembic/versions/20261004_0004_document_processing_attempts.py"
+    spec = importlib.util.spec_from_file_location("pdf_migration", path)
+    pdf_migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pdf_migration)
+    def pdf_migrate(action):
+        with pg[0].begin() as conn:
+            with Operations.context(MigrationContext.configure(conn)):
+                getattr(pdf_migration, action)()
+    pdf_migrate("upgrade")
     with Session(pg[0]) as db:
         user = User(email="quota@example.invalid", username="quota", password_hash="test")
         course = Course(user=user, name="baseline")
@@ -331,9 +344,10 @@ def test_full_migration_chain_preserves_five_tables_and_metadata(pg):
         db.flush()
         db.add(DocumentChunk(document_id=document.id, chunk_index=0, content="baseline", page_number=1, embedding=[0.0] * 1024))
         db.commit()
-    pg[1]("upgrade")
+    pdf_migrate("downgrade")
     pg[1]("downgrade")
     pg[1]("upgrade")
+    pdf_migrate("upgrade")
     with pg[0].connect() as conn:
         for table in ("users", "courses", "tasks", "documents", "document_chunks"):
             assert conn.scalar(text(f"SELECT count(*) FROM {table}")) == 1

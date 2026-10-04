@@ -338,13 +338,14 @@ def test_rag_outcomes_are_bounded(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_document_processing_outcomes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
-    document = SimpleNamespace(status=ingestion.DocumentStatus.PROCESSING, storage_path="safe.pdf")
+    document = SimpleNamespace(status=ingestion.DocumentStatus.PROCESSING, storage_path="safe.pdf", document_id=1, user_id=1)
     session = Mock()
     session.get.return_value = document
     context = Mock()
     context.__enter__ = Mock(return_value=session)
     context.__exit__ = Mock(return_value=False)
     monkeypatch.setattr(ingestion, "SessionLocal", lambda: context)
+    monkeypatch.setattr(ingestion, "claim_attempt", lambda *_args: "safe.pdf")
     source = tmp_path / "safe.pdf"
     source.write_bytes(b"%PDF")
     monkeypatch.setattr(ingestion, "resolve_storage_path", lambda _: source)
@@ -352,6 +353,7 @@ def test_document_processing_outcomes(monkeypatch: pytest.MonkeyPatch, tmp_path:
         ingestion, "get_settings", lambda: SimpleNamespace(
             document_chunk_size_chars=1200, document_chunk_overlap_chars=200,
             embedding_batch_size=16,
+            document_max_chunks=200,
         ),
     )
     monkeypatch.setattr(ingestion, "extract_pdf_pages", lambda _: [ingestion.PageText(1, "safe")])
@@ -365,14 +367,14 @@ def test_document_processing_outcomes(monkeypatch: pytest.MonkeyPatch, tmp_path:
     before_success = sample("document_processing_total", success)
     before_failure = sample("document_processing_total", failure)
 
-    ingestion.process_document(1)
+    ingestion.process_document(1, "mock-attempt")
     monkeypatch.setattr(
         ingestion, "extract_pdf_pages", lambda _: (_ for _ in ()).throw(
             ingestion.DocumentProcessingError("safe failure")
         ),
     )
-    ingestion.process_document(1)
+    ingestion.process_document(1, "mock-attempt")
 
     assert sample("document_processing_total", success) == before_success + 1
     assert sample("document_processing_total", failure) == before_failure + 1
-    mark_failed.assert_called_once_with(1, "safe failure")
+    mark_failed.assert_called_once_with(1, "safe failure", "mock-attempt")

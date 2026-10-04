@@ -56,6 +56,10 @@ def reset_database(monkeypatch: pytest.MonkeyPatch):
     from app.services.knowledge import grounded_answer
     from app.services.ai_guard import get_quota_service
     from app.services.ai_quota import QuotaService
+    from app.services import document_protection
+    from app.api.routes import documents
+    from datetime import UTC, datetime
+    from contextlib import contextmanager
 
     # Explicit mocks for legacy SQLite API regressions, never a runtime fallback.
     # Dedicated PostgreSQL API tests replace this dependency with the real service.
@@ -67,8 +71,24 @@ def reset_database(monkeypatch: pytest.MonkeyPatch):
         qwen_model="mock-only", app_environment="test",
     )
     monkeypatch.setattr(config, "get_settings", lambda: settings)
-    for module in (extractor, embedding, grounded_answer):
+    for module in (extractor, embedding, grounded_answer, ingestion, documents, document_protection):
         monkeypatch.setattr(module, "get_settings", lambda: settings)
+    # Legacy SQLite tests exercise contracts only. New independent-connection PG
+    # tests restore the real lock, never weakening the runtime safety guard.
+    monkeypatch.setattr(document_protection, "lock_processing", lambda _db: datetime.now(UTC))
+    monkeypatch.setattr(documents, "lock_processing", lambda _db: datetime.now(UTC))
+    # Explicit test-only substitutes for legacy SQLite contract tests.
+    @contextmanager
+    def fake_execution(_engine, _document_id, _user_id):
+        yield lambda: None
+    monkeypatch.setattr(ingestion, "execution_guard", fake_execution)
+    # Legacy SQLite has no PG advisory-lock function. Preserve production guard.
+    from sqlalchemy import event
+    def sqlite_execution_lock(dbapi, _record):
+        dbapi.create_function("pg_try_advisory_xact_lock", 2, lambda *_args: True)
+    event.listen(test_engine, "connect", sqlite_execution_lock)
+    with test_engine.connect() as connection:
+        connection.connection.driver_connection.create_function("pg_try_advisory_xact_lock", 2, lambda *_args: True)
     quota = Mock(spec=QuotaService)
     quota.reserve.side_effect = lambda *_args: uuid4()
     quota.mark_dispatched.return_value = True
@@ -83,6 +103,7 @@ def reset_database(monkeypatch: pytest.MonkeyPatch):
     yield
     app.dependency_overrides.pop(get_quota_service, None)
     Base.metadata.drop_all(test_engine)
+    event.remove(test_engine, "connect", sqlite_execution_lock)
     shutil.rmtree(TEST_STORAGE_ROOT, ignore_errors=True)
 
 

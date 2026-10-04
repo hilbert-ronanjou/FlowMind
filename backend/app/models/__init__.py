@@ -1,6 +1,7 @@
 from app.models.ai_usage_reservation import AIUsageReservation, Operation, ReservationState
 from app.models.course import Course
 from app.models.document import Document, DocumentChunk, DocumentStatus
+from app.models.document_processing_attempt import DocumentProcessingAttempt
 from app.models.task import Task, TaskPriority, TaskSource, TaskStatus
 from app.models.user import User
 
@@ -10,6 +11,7 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "DocumentStatus",
+    "DocumentProcessingAttempt",
     "Task",
     "TaskPriority",
     "TaskSource",

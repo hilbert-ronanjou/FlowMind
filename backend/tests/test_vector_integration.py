@@ -12,6 +12,8 @@ from app.models.course import Course
 from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.models.user import User
 from app.services.knowledge import ingestion
+from app.services import document_protection as protection
+from datetime import UTC, datetime
 from app.services.knowledge.retrieval import (
     search_ready_chunk_candidates,
     search_ready_chunks,
@@ -59,12 +61,15 @@ def test_ingestion_persists_nul_free_chunks_in_postgres(
                     status=DocumentStatus.PROCESSING,
                 )
                 db.add(document)
+                db.flush()
+                attempt_id = protection.reserve_attempt(db, document, user.id, datetime.now(UTC))
                 db.commit()
                 document_id = document.id
 
             expected = "辽宁省博物馆赓续家国情怀"
 
-            def fake_embed(texts: list[str]) -> list[list[float]]:
+            def fake_embed(texts: list[str], *, max_retries: int) -> list[list[float]]:
+                assert max_retries == 0
                 assert texts == [expected]
                 return [unit_vector(0)]
 
@@ -74,7 +79,7 @@ def test_ingestion_persists_nul_free_chunks_in_postgres(
                 PageObject, "extract_text", lambda _page: "辽宁省博物馆\x00赓续家国情怀"
             )
             monkeypatch.setattr(ingestion, "embed_texts", fake_embed)
-            ingestion.process_document(document_id)
+            ingestion.process_document(document_id, attempt_id)
 
             with sessions() as db:
                 saved = db.get(Document, document_id)

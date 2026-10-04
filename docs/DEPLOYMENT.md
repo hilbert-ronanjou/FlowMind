@@ -56,7 +56,7 @@ docker compose --env-file .env.production -p flowmind-prod -f compose.prod.yml l
 docker compose --env-file .env.production -p flowmind-prod -f compose.prod.yml run --rm --no-deps migrate alembic current
 ```
 
-Expected current head: `20260920_0002`. Do not run concurrent deployment/migration commands or scale Backend; in-process PDF tasks and stale recovery assume one worker/replica. Compose dependency gates apply to startup, not continuous dependency supervision. Already-running old application containers are not stopped by a newly failed migration.
+Expected current head: `20261004_0004` (M4-B; previous M4-A head `20261003_0003`). Do not run concurrent deployment/migration commands or scale Backend; in-process PDF tasks and stale recovery assume one worker/replica. Compose dependency gates apply to startup, not continuous dependency supervision. Already-running old application containers are not stopped by a newly failed migration.
 
 For an image/configuration update, use a maintenance window: build first, stop Nginx and Backend, and remove the completed migration container so the next deployment cannot rely on stale success:
 
@@ -173,18 +173,53 @@ automatic provider retry.
 Extraction input is capped at 10,000 characters; questions remain capped at
 2,000; the complete RAG prompt is capped at 24,000 characters; both interactive
 Qwen calls have a 4,096-token generation limit. Interactive SDK retries are zero;
-PDF embedding keeps its existing retry default. All bounds are positive runtime
+PDF ingestion now explicitly selects zero retries under M4-B; the shared helper
+default remains unchanged. All bounds are positive runtime
 settings in the examples. They do not change retrieval, prompts or chunking.
 
 To stop new application-managed paid requests, set
 `AI_PAID_OPERATIONS_ENABLED=false` in the private Backend runtime configuration,
 then recreate Backend through the existing deployment procedure. Settings are
 cached: editing a file alone is not a live shutdown. This also blocks PDF
-embedding at its provider boundary, but does not add PDF quotas or attempt
+embedding at its provider boundary; M4-B separately adds PDF quotas and attempt
 fencing. Already-sent requests cannot be recalled. Health, CRUD and Confirm
 Import remain available. Independent SDK clients/credentials are not controlled
 by this application switch. No restart or production change is performed by the
 development test suite.
+
+## PDF processing protection (M4-B; pending production rollout)
+
+The new head `20261004_0004` adds a separate PDF attempt ledger and nullable
+Document token; it never changes the interactive ledger or 1024-dimensional
+vectors. Keep existing database credentials, JWT, storage volume, model, chunk
+settings, single worker and SLS/monitoring configuration. Runtime defaults:
+`DOCUMENT_MAX_PAGES=80`, `DOCUMENT_MAX_TEXT_CHARS=150000`,
+`DOCUMENT_MAX_CHUNKS=200`, `DOCUMENT_USER_DAILY_LIMIT=2`,
+`DOCUMENT_GLOBAL_DAILY_LIMIT=20`. Restart/recreate applies settings, not file edits.
+
+Every accepted upload/Retry costs one non-refundable admission, even pre-provider
+PDF failure. Validation/ownership/duplicate/quota rejection costs none. PDF debits
+are independent of interactive quotas. Daily quotas reset at UTC midnight
+(08:00 Asia/Shanghai); one active processing admission per user spans all Courses.
+429 provides Retry-After; DB/lock failure rejects new work, not bypasses protection.
+Oversized extraction fails before any embedding and advises splitting the file.
+
+Use the existing backup/maintenance approval procedure before a future rollout.
+Stop old Backend before migration: old unfenced PDF workers must not overlap the
+new code. Migration marks old PROCESSING rows FAILED/interrupted; READY/FAILED,
+PDF relative keys and existing chunks remain intact. Explicit Retry uses a new
+admission. Confirm `alembic current` is `20261004_0004` and `alembic check` is clean
+before the new Backend starts. No production commands were executed in this task.
+Do not automatically downgrade: it drops the new accounting, and restarting old
+code removes PDF protection. Application rollback needs Owner-approved exposure control.
+
+Each running PDF holds one extra AUTOCOMMIT DB connection for its non-blocking
+Document execution lock, NOT a long transaction/global quota lock. Pool/DB loss
+fails closed; stale recovery leaves counted attempts for explicit Retry. Lease
+default remains `DOCUMENT_PROCESSING_STALE_SECONDS=1800`; keep it comfortably
+above the 30s embedding SDK timeout. BackgroundTasks remains non-durable, and a
+remote already-sent call cannot be recalled after process/DB-session loss.
+See [M4-B failure/locking details](M4_B_PDF_PROTECTION.md). No queue or automatic retries.
 
 ## CI
 

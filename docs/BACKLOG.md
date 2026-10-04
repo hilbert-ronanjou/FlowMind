@@ -15,13 +15,13 @@ This file records ideas that are outside the active Sprint scope. Items here are
 - Production observability and operational runbooks
 - Document and Course deletion currently removes the local PDF before the database delete commit. A database commit failure can therefore leave a retained row whose file is missing. Keep this as a known limitation until a separately scoped consistency design; do not change the current upload, retry, download, delete, or stale-recovery behavior during M1-A.
 
-## M4-B and later cost-protection work (not authorized by M4-A)
+## Cost-protection status and later work
 
-- PDF upload/retry quotas, maximum extracted pages/text/chunks, complete-job embedding reservation, and per-user/global background execution slots.
-- Atomic background attempt claim/fencing and stale-attempt recovery, preventing duplicate embedding costs and old workers overwriting newer results.
+- M4-B now authorizes PDF upload/retry admission quotas, extracted page/text/chunk bounds, one user processing slot, atomic attempt claim/fencing and stale recovery. See [the implementation contract](M4_B_PDF_PROTECTION.md); this is not authorization for additional job infrastructure or a global worker scheduler.
+- Durable background delivery, hard parser CPU/memory sandboxing, whole-job deadlines, automatic resume and distributed provider exactly-once/cancellation are deferred. BackgroundTasks and conservative attempt debits cannot recall a remote in-flight request after process/DB-session loss.
 - Response replay/caching, precise monetary billing/reconciliation, and higher-throughput quota buckets are deferred; they are not required for the foundational M4-A interactive operation ledger.
 
-The current M4-A batch is documentation only. See [the Owner Review plan](M4_A_AI_PROTECTION.md); do not implement these deferred items without a separate scope.
+M4-A is implemented (Owner reports production acceptance). M4-B is a separately authorized minimal implementation; do not implement the remaining deferred items without a separate scope.
 
 ## RAG quality observations
 
