@@ -19,7 +19,7 @@ from app.models.document import Document, DocumentChunk, DocumentStatus
 from app.services import embedding
 from app.services.ai import extractor
 from app.services.ai_guard import get_quota_service
-from app.services.ai_quota import QuotaLimits, QuotaService
+from app.services.ai_quota import QuotaLimits, QuotaService, QuotaUnavailable
 from app.services.knowledge import grounded_answer
 from app.api.routes import knowledge
 from app.services.knowledge.retrieval import RetrievedChunk
@@ -254,6 +254,46 @@ def test_success_survives_failed_settlement_without_second_call(
     assert "ai_quota_settlement_failed" in [getattr(r, "event", None) for r in caplog.records]
     assert "private secret" not in caplog.text
     assert calls(sdk) == ((0, 1, 1) if course_query else (1, 0, 0))
+
+
+@pytest.mark.parametrize("stage", ["extract", "embed", "answer"])
+@pytest.mark.parametrize("failure", ["known", "timeout"])
+def test_original_failure_survives_failed_settlement_without_second_call(
+    client, auth_headers, sdk, ready_course, stage, failure, caplog,
+):
+    # Explicitly mocked admission, but run the real best-effort settlement handler.
+    # PostgreSQL transaction/commit regressions remain in the dedicated PG tests.
+    quota = app.dependency_overrides[get_quota_service]()
+    quota.settle.side_effect = QuotaUnavailable()
+    quota.settle_best_effort.side_effect = lambda rid, state: QuotaService.settle_best_effort(quota, rid, state)
+    request = httpx.Request("POST", "https://provider.invalid/v1")
+    provider_error = (
+        APITimeoutError(request=request) if failure == "timeout" else
+        InternalServerError("private provider diagnostic",
+                            response=httpx.Response(500, request=request), body=None)
+    )
+    endpoint = sdk[stage].embeddings.create if stage == "embed" else sdk[stage].chat.completions.parse
+    endpoint.side_effect = provider_error
+    response = post(client, auth_headers, None if stage == "extract" else ready_course)
+
+    temporary = failure == "timeout" or stage == "embed"
+    expected_detail = {
+        "extract": "AI extraction service is temporarily unavailable" if temporary else "AI provider request failed",
+        "embed": "Knowledge embedding service is temporarily unavailable",
+        "answer": "Knowledge answer service is temporarily unavailable" if temporary else "Knowledge answer provider request failed",
+    }[stage]
+    assert response.status_code == (503 if temporary else 502)
+    assert response.json() == {"detail": expected_detail}
+    expected_state = State.UNCERTAIN if failure == "timeout" else State.FAILED
+    quota.reserve.assert_called_once()
+    quota.mark_dispatched.assert_called_once()
+    rid = quota.mark_dispatched.call_args.args[0]
+    quota.settle.assert_called_once_with(rid, expected_state)
+    quota.cancel.assert_not_called()
+    settlement_logs = [r for r in caplog.records if getattr(r, "event", None) == "ai_quota_settlement_failed"]
+    assert len(settlement_logs) == 1 and "private" not in caplog.text + response.text
+    expected_calls = {"extract": (1, 0, 0), "embed": (0, 1, 0), "answer": (0, 1, 1)}[stage]
+    assert calls(sdk) == expected_calls
 
 
 @pytest.mark.parametrize("stage", ["reserve", "dispatch"])

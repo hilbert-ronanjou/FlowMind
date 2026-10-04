@@ -181,11 +181,13 @@ M1-B added no database schema, business API, UI, RAG prompt, Top-K, chunking, em
 
 M2 production deployment, including domain, ACME bootstrap, and HTTPS, is complete and frozen. M3-A request IDs, safe structured logs, the private `/metrics` endpoint, and bounded application metrics remain the foundation. The existing M3-B SLS / LoongCollector integration remains unchanged. M3-C2 authorizes only an optional self-hosted Prometheus/Grafana Compose overlay, private Backend scraping, bounded retention/resource limits, separate persistent monitoring volumes, authenticated loopback-only Grafana access through SSH, one provisioned dashboard using existing metrics, tests, and operating documentation. Public monitoring access, managed monitoring, tracing, alerting, rate limiting, schema changes, and business or AI/RAG behavior changes remain outside this milestone. No commit or tag is authorized.
 
-## Current Sprint scope: Sprint 3 / M4-A Interactive AI Protection — Owner Review
+## Current Sprint scope: Sprint 3 / M4-A Interactive AI Protection — Implemented and locally accepted; not production deployed
 
-The read-only M4 architecture audit is complete. This batch authorizes scope/design documentation only; it does not authorize application changes, creation or execution of migrations, package installation, paid provider calls, commits, tags, or deployment. The proposed implementation contract is [M4-A design and implementation plan](M4_A_AI_PROTECTION.md). Owner approval and a separate implementation instruction are required before coding.
+The read-only M4 architecture audit and the separately authorized M4-A implementation are complete. Round 1 implemented the single PostgreSQL reservation ledger, migration `20261003_0003`, and concurrency-safe quota service. Round 2 integrated extraction and Course RAG endpoints under the frozen [M4-A contract](M4_A_AI_PROTECTION.md). Both rounds passed local acceptance with disposable PostgreSQL/pgvector and mocked providers; the Round 2 baseline passed 250 backend tests with no failures or skips, including all 30 existing PostgreSQL quota tests. The follow-up adds a regression for original AI failure plus settlement failure and updates status documentation only; it changes no business logic or frozen rules.
 
-The proposed M4-A implementation is limited to:
+M4-A is not deployed to production. No production migration, ECS deployment or real paid-provider acceptance is claimed. Deployment, paid-provider smoke tests, commits and tags remain separately approval-gated. M4-B is not authorized.
+
+The implemented, frozen M4-A scope is limited to:
 
 - the existing verified JWT `CurrentUser.id` as the quota identity;
 - shared protection for `POST /api/v1/ai/extract` and `POST /api/v1/courses/{course_id}/knowledge/query`, including the latter's question embedding;
@@ -204,11 +206,11 @@ PDF upload/retry quotas, page/text/chunk processing bounds, whole-job embedding 
 
 ### Current prohibitions
 
-Payments, subscriptions, billing reconciliation, Redis, Celery, new queues/infrastructure, response caching, dashboards, new observability products, new business pages/modules, Agent features, and Study Plan are excluded. Do not change prompts, Top-K, chunk size/overlap, vector dimensions, embedding model, retrieval/citation behavior, Nginx routing, SLS, or monitoring. No additional table beyond the single proposed ledger is in the M4-A plan; no table is authorized to be created in this documentation batch.
+Payments, subscriptions, billing reconciliation, Redis, Celery, new queues/infrastructure, response caching, dashboards, new observability products, new business pages/modules, Agent features, and Study Plan are excluded. Do not change prompts, Top-K, chunk size/overlap, vector dimensions, embedding model, retrieval/citation behavior, Nginx routing, SLS, or monitoring. No additional table beyond the single implemented ledger is in the M4-A scope; this regression/status follow-up authorizes no schema change.
 
 ## Features prohibited during the completed M1-B stage
 
-The following restrictions applied during Sprint 3 / M1-B even when features were mentioned elsewhere in the V1.0 product scope. They are historical restrictions; the current M4-A documentation-only boundary is stated above.
+The following restrictions applied during Sprint 3 / M1-B even when features were mentioned elsewhere in the V1.0 product scope. They are historical restrictions; the current frozen M4-A boundary and undeployed status are stated above.
 
 - HTTPS, domain configuration, or cloud deployment
 - CD or automatic deployment (minimal regression CI is authorized)
@@ -267,7 +269,7 @@ The existing five business tables remain:
 
 The current business reason for `documents` is to record Course-owned PDF metadata, controlled storage identity, processing status, safe failure details, and duplicate-detection input. `Course.user_id` is the single authoritative ownership path; `documents` deliberately has no duplicated `user_id`. The current business reason for `document_chunks` is to store page-aware extracted text and 1024-dimensional embeddings after successful processing, and to provide the only factual context candidates for grounded questions. No new M1-A table is authorized. Alembic's revision metadata and the PostgreSQL `vector` extension are not business tables. Passwords, secrets, API keys, absolute storage paths, raw prompts, embeddings, and internal provider details must never be exposed through knowledge or file APIs.
 
-M4-A proposes one additional internal infrastructure table, `ai_usage_reservations`, solely to persist atomic interactive-operation admission across concurrent requests and service restarts. It is not a new business module or a billing system. Its schema and migration are for Owner Review only and do not exist yet; this batch permits no database change.
+M4-A implemented one additional internal infrastructure table, `ai_usage_reservations`, solely to persist atomic interactive-operation admission across concurrent requests and service restarts. It is not a new business module or a billing system. Its model and migration `20261003_0003` exist and passed disposable local PostgreSQL acceptance; they have not been applied to production as part of M4-A. This regression/status follow-up permits no schema change.
 
 ## Change control
 

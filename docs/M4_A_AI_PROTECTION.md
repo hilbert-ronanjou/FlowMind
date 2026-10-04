@@ -1,8 +1,12 @@
 # Sprint 3 / M4-A: Interactive AI Protection
 
-Status: proposed implementation contract, awaiting Owner Review. Date: 2026-10-03.
+Status: Round 1 and Round 2 implemented and locally accepted; not deployed to production. Updated: 2026-10-04. Design frozen: 2026-10-03.
 
-This is a scope freeze and implementation plan, not an implemented feature. Only documentation is changed in this batch. Do not create application code or a migration, install dependencies, run migrations, call paid providers, commit, tag, or deploy until separately authorized.
+This is the frozen M4-A contract and implementation record. Round 1 implemented the PostgreSQL reservation ledger, migration `20261003_0003`, and concurrency-safe quota service. Round 2 integrated authenticated extraction and Course RAG queries, bounds, zero interactive retries, idempotency, emergency shutdown and conservative settlement. Both rounds passed local acceptance using a disposable PostgreSQL/pgvector database and mocked providers. The Round 2 baseline passed 250 backend tests (0 failed, 0 skipped), including the existing 30 PostgreSQL quota tests; a follow-up regression additionally covers an original AI failure combined with settlement failure.
+
+M4-A has not been deployed to production, and no production migration or real paid-provider acceptance is claimed. Production rollout, paid smoke tests, commits and tags require separate authorization. M4-B remains deferred. Sections 1-10 retain the original frozen design and implementation/acceptance plan; proposal wording and source anchors there describe the pre-implementation baseline, not the current delivery status. This status update does not change any frozen rule.
+
+Follow-up validation (2026-10-04): the new six-case mock-provider regression passed, preserving exact original error responses for extraction, RAG embedding and answer failures/timeouts while the real best-effort settlement handler encounters quota-storage failure. The complete Backend suite in this follow-up returned 178 passed, 0 failed and 78 skipped because the local Docker engine did not become available and no disposable PostgreSQL URL was supplied. Those skips are not PostgreSQL acceptance; the earlier 250-pass local baseline above is a separate completed run, and a fresh full PostgreSQL rerun remains pending.
 
 FlowMind is a foundational AI/Agent learning project, not the final job-search portfolio project. Prefer one small PostgreSQL service over new infrastructure or speculative abstractions.
 
